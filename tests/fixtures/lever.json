@@ -1,0 +1,8 @@
+[
+  {"id": "aaa-1", "text": "Data Scientist", "hostedUrl": "https://jobs.lever.co/acme/aaa-1",
+   "createdAt": 1760000000000, "workplaceType": "remote",
+   "categories": {"location": "Manchester", "allLocations": ["Manchester", "Leeds"], "commitment": "Full-time", "team": "Data"},
+   "descriptionPlain": "We are Acme.", "lists": [{"text": "What you need", "content": "<li>Python</li><li>Statistics</li>"}],
+   "additionalPlain": "Equal opportunity employer.",
+   "salaryRange": {"min": 50000, "max": 65000, "currency": "GBP", "interval": "per-year-salary"}}
+]

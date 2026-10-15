@@ -1,0 +1,9 @@
+{"jobs": [
+  {"id": "u-1", "title": "Analytics Engineer", "jobUrl": "https://jobs.ashbyhq.com/acme/u-1", "isListed": true,
+   "location": "Remote", "address": {"postalAddress": {"addressCountry": "United Kingdom"}},
+   "secondaryLocations": [{"location": "Office", "address": {"postalAddress": {"addressLocality": "Leeds", "addressCountry": "United Kingdom"}}}],
+   "workplaceType": "Remote", "publishedAt": "2026-10-03T09:00:00.000+00:00", "department": "Data",
+   "employmentType": "FullTime", "descriptionPlain": "Model the warehouse.",
+   "compensation": {"compensationTierSummary": "£60K - £75K"}},
+  {"id": "u-2", "title": "Hidden", "isListed": false}
+]}

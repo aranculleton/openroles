@@ -1,0 +1,7 @@
+{"total": 2, "facets": [{"facetParameter": "locationCountry", "values": [
+   {"descriptor": "United Kingdom", "id": "uk-id", "count": 2}, {"descriptor": "France", "id": "fr-id", "count": 0}]}],
+ "jobPostings": [
+  {"title": "Demand Planner", "externalPath": "/job/Manchester/Demand-Planner_R1", "locationsText": "Manchester", "postedOn": "Posted 3 Days Ago"},
+  {"title": "Logistics Analyst", "externalPath": "/job/Leeds/Logistics-Analyst_R2", "locationsText": "2 Locations", "postedOn": "Posted 30+ Days Ago"},
+  {"title": "Evil", "externalPath": "https://elsewhere.example.com/x", "locationsText": "Nowhere"}
+ ]}

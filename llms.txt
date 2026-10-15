@@ -1,0 +1,28 @@
+# openroles
+
+> Read an employer's open roles straight from its applicant tracking system (Greenhouse, Lever, Ashby, Workday). No API key. Python standard library only. CLI, Python API and MCP server.
+
+## Use it
+
+- CLI: `openroles <company | careers URL | board URL | ats:token> [--query WORDS] [--location TEXT] [--remote] [--since DAYS] [--limit N] [--json]`
+- Find the board: `openroles detect <company or URL>` prints `ats:token` lines.
+- Python: `openroles.fetch(target, query=None, location=None, remote=None, since_days=None, limit=None)` returns a list of `Job`; `openroles.detect(target)` returns a list of `Board`.
+- MCP: `openroles mcp` (stdio). Tools: `find_job_board(target)`, `list_open_roles(target, query?, location?, remote_only?, since_days?, limit?, include_descriptions?, country?)`.
+
+## Targets
+
+- `greenhouse:<token>`, `lever:<token>`, `ashby:<token>`, `workday:<tenant>.wd<N>/<Site>`
+- Board URLs: boards.greenhouse.io/<token>, jobs.lever.co/<token>, jobs.ashbyhq.com/<token>, <tenant>.wd<N>.myworkdayjobs.com/<Site>
+- A careers page URL: the board it links to or embeds is found.
+- A company name: tried on Greenhouse, Lever and Ashby. Workday needs its URL.
+
+## Job fields
+
+id, ats, board, title, url, location, locations, remote (true/false/null), posted (YYYY-MM-DD), department, employment_type, compensation, deadline, description (plain text).
+
+## Notes
+
+- `query` words must all appear in the title. Workday also searches the board with them.
+- Workday descriptions cost one request each: pass `details=True` (CLI `--details`) or a query.
+- Errors: `BoardError` (wrong token, no answer), `RobotsDisallowed` (robots.txt says no).
+- Polite: robots.txt honoured, two requests per host at a time, stops on 429/503.

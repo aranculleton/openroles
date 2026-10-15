@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openroles"
+dynamic = ["version"]
+description = "Every open role, straight from the employer's own ATS: Greenhouse, Lever, Ashby and Workday, with no key and no dependencies. CLI, Python API and MCP server."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Aran Culleton" }]
+requires-python = ">=3.9"
+dependencies = []
+keywords = ["jobs", "job-board", "ats", "greenhouse", "lever", "ashby", "workday", "careers", "mcp", "job-search"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Internet :: WWW/HTTP",
+  "Topic :: Office/Business",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/aranculleton/openroles"
+Issues = "https://github.com/aranculleton/openroles/issues"
+Changelog = "https://github.com/aranculleton/openroles/blob/main/CHANGELOG.md"
+
+[project.scripts]
+openroles = "openroles.cli:main"
+
+[tool.hatch.version]
+path = "src/openroles/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/openroles"]
+
+[tool.ruff]
+line-length = 130
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["UP006", "UP007", "UP035", "UP045"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

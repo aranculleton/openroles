@@ -1,0 +1,23 @@
+name: Bug report
+description: Something reads a board wrongly, or fails
+labels: [bug]
+body:
+  - type: input
+    id: target
+    attributes:
+      label: Board
+      description: The ats:token or board URL (a public board, so it is fine to share)
+      placeholder: greenhouse:acme
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: openroles and Python versions
+      placeholder: openroles 0.1.0, Python 3.12

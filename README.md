@@ -152,16 +152,17 @@ hammering a site or republishing someone's board wholesale.
 [last-job-search](https://github.com/aranculleton/last-job-search), a job search that Claude
 runs end to end, extracted so anyone can use it.
 
-## Development
+## Contributing
+
+Contributions are welcome, and the most useful one is a reader for another ATS
+(Workable, Recruitee, Personio, Teamtailor and more are wanted). [CONTRIBUTING.md](CONTRIBUTING.md)
+has the set-up, the few rules that keep the library small and polite, and a checklist
+for adding a system. Bugs and requests go in [Issues](https://github.com/aranculleton/openroles/issues).
 
 ```bash
 pip install -e . pytest ruff
-pytest && ruff check .
+pytest && ruff check .        # offline: every answer comes from tests/fixtures/
 ```
-
-The tests never touch the network: every answer comes from `tests/fixtures/`. Issues and
-pull requests are welcome; a new ATS needs a public, documented or robots-permitted
-board endpoint and a test with an invented fixture.
 
 ## Licence
 

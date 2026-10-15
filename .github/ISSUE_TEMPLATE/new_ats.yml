@@ -1,0 +1,22 @@
+name: Support another ATS
+description: Ask for (or offer to build) a reader for another applicant tracking system
+labels: [new-ats]
+body:
+  - type: input
+    id: ats
+    attributes:
+      label: Which system
+      placeholder: Workable
+    validations:
+      required: true
+  - type: textarea
+    id: endpoint
+    attributes:
+      label: Its public board endpoint
+      description: The URL a careers page reads its open roles from, and whether it is documented or allowed by robots.txt
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Helping
+      options:
+        - label: I'd like to build it (see CONTRIBUTING.md, "Adding an ATS")

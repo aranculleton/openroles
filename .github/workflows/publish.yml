@@ -38,3 +38,39 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  # The official MCP Registry lists the server once PyPI has the release: it checks
+  # the README on PyPI for the mcp-name line, so this runs after the upload. GitHub's
+  # own login (OIDC) proves the io.github.aranculleton namespace; no secret.
+  mcp-registry:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: The release tag matches server.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for v in "$(jq -r .version server.json)" "$(jq -r '.packages[0].version' server.json)"; do
+            if [ "$v" != "$tag" ]; then
+              echo "server.json says $v but the release is $tag: bump it to match" >&2
+              exit 1
+            fi
+          done
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+      - name: Log in with GitHub
+        run: ./mcp-publisher login github-oidc
+      - name: Publish to the MCP Registry
+        # PyPI can take a minute to show a new release, so a few tries, spaced out.
+        run: |
+          for i in 1 2 3 4 5; do
+            ./mcp-publisher publish && exit 0
+            echo "not yet (try $i), waiting 30s"
+            sleep 30
+          done
+          exit 1

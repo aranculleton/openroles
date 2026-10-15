@@ -71,6 +71,8 @@ answer), and `openroles.RobotsDisallowed` when the host's robots.txt says no.
 
 ## For AI agents (MCP)
 
+<!-- mcp-name: io.github.aranculleton/openroles -->
+
 `openroles mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server over
 stdio, so Claude, Cursor and other agents can look up any employer's open roles
 themselves. Two tools: `find_job_board` and `list_open_roles` (descriptions left out

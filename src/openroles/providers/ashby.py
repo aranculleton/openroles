@@ -80,9 +80,13 @@ def rows(token: str, data: object) -> List[Job]:
         labels = [label(j)] + [label(s, home) for s in j.get("secondaryLocations") or []
                                if isinstance(s, dict)]
         labels = list(dict.fromkeys(x for x in labels if x))
+        # workplaceType is Ashby's current field; isRemote is the older flag, and only
+        # counts when the newer one is missing (a "Hybrid" role can carry isRemote).
         workplace = clean(j.get("workplaceType")).lower()
-        remote = True if (workplace == "remote" or j.get("isRemote") is True) else \
-            (False if workplace in ("onsite", "on-site") else None)
+        if workplace:
+            remote = True if workplace == "remote" else (False if workplace in ("onsite", "on-site") else None)
+        else:
+            remote = True if j.get("isRemote") is True else None
         out.append(Job(
             id=f"ab-{j.get('id')}",
             ats="ashby",

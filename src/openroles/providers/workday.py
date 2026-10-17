@@ -14,7 +14,7 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Iterable, List, Optional, Tuple, Union
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from .. import _http
 from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text
@@ -71,6 +71,18 @@ def with_country(label, country) -> str:
     if country and label.lower().strip(" -") in ("remote", "fully remote", "100% remote"):
         return f"{label}, {country}"
     return label
+
+
+def path_place(path) -> str:
+    """The primary location from a posting's path, `/job/<place>/<title>_<id>`.
+
+    Some tenants leave `locationsText` out of the listing, and a blank location
+    reads as "nowhere" to anything that filters by place. Workday writes the
+    primary location into every posting's path, so that is the fallback:
+    "Toronto-40-King-St-W-Corp" reads "Toronto 40 King St W Corp".
+    """
+    parts = str(path or "").split("/")
+    return clean(" ".join(unquote(parts[2]).split("-"))) if len(parts) > 3 else ""
 
 
 def distinct_terms(queries: Iterable[str]) -> List[str]:
@@ -236,7 +248,7 @@ class WorkdayBoard:
         title = clean(posting.get("title"))
         if not title or not _valid(path):
             return None
-        where = clean(posting.get("locationsText"))
+        where = clean(posting.get("locationsText")) or path_place(path)
         remote = clean(posting.get("remoteType")).lower()
         return Job(
             id=f"wd-{self.tenant}-{path.rsplit('/', 1)[-1]}",
@@ -257,7 +269,8 @@ class WorkdayBoard:
             return None
         place = info.get("country")
         country = clean(place.get("descriptor")) if isinstance(place, dict) else ""
-        labels = [with_country(info.get("location") or posting.get("locationsText"), country)]
+        labels = [with_country(info.get("location") or posting.get("locationsText")
+                               or path_place(posting.get("externalPath")), country)]
         labels += [with_country(a, country) for a in info.get("additionalLocations") or []
                    if isinstance(a, str)]
         labels = list(dict.fromkeys(x for x in labels if x))

@@ -11,7 +11,7 @@ Python standard library.
 """
 from __future__ import annotations
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 import datetime as _dt
 from typing import Callable, Iterable, List, Optional, Union

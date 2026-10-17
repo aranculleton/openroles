@@ -72,6 +72,20 @@ def test_workday_listing_details_and_safety(web):
     assert all("elsewhere" not in url for url, _ in web.calls)
 
 
+def test_workday_reads_the_place_from_the_path_when_the_listing_has_none():
+    # Some tenants send no locationsText; a blank location reads as "nowhere"
+    # to a place filter, which emptied a whole board.
+    board = workday.WorkdayBoard("acme.wd3/External")
+    job = board.job({"title": "Demand Planner", "bulletFields": ["R7", "Location Negotiable"],
+                     "externalPath": "/job/Manchester-1-Piccadilly-Corp/Demand-Planner_R7"}, TODAY)
+    assert job.location == "Manchester 1 Piccadilly Corp" and job.locations == [job.location]
+    remote = board.job({"title": "Analyst", "externalPath": "/job/Remote-United-Kingdom/Analyst_R8"},
+                       TODAY)
+    assert remote.location == "Remote United Kingdom" and remote.remote is True
+    assert workday.path_place("/job/S%C3%A3o-Paulo/Analyst_R9") == "São Paulo"
+    assert workday.path_place("not-a-path") == ""
+
+
 def test_workday_narrows_to_a_country_with_the_boards_own_facet(web):
     def listing(url, payload):
         assert payload["appliedFacets"] in ({}, {"locationCountry": ["uk-id"]})

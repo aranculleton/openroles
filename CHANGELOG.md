@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2 (2026-10-17)
+
+- Workday: a posting's location is read from its path when the listing leaves
+  `locationsText` out. On one large board, 154 of 154 postings came back with no
+  location, so any filter by place dropped the whole board.
+
 ## 0.1.1 (2026-10-15)
 
 - Listed in the official MCP Registry as `io.github.aranculleton/openroles`: `server.json`, the

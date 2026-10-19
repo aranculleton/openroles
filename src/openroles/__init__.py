@@ -5,13 +5,13 @@
     [Board(ats='lever', token='acme')]
     >>> jobs = openroles.fetch("greenhouse:acme", query="data analyst", location="London")
 
-Greenhouse, Lever, Ashby and Workday, read from the same public JSON their own
-careers pages use: no key, no account, no scraping service, and nothing but the
-Python standard library.
+Fifteen applicant tracking systems and any careers site that publishes its jobs for
+search engines, read from the same public feeds their own careers pages use: no key,
+no account, no scraping service, and nothing but the Python standard library.
 """
 from __future__ import annotations
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 
 import datetime as _dt
 from typing import Callable, Iterable, List, Optional, Union
@@ -33,7 +33,8 @@ def _boards(target: Union[str, Board]) -> List[Board]:
         return [target]
     found = detect(target)
     if not found:
-        raise BoardError(f"no Greenhouse, Lever, Ashby or Workday board found for {target!r}")
+        from .models import systems
+        raise BoardError(f"no {systems()} board found for {target!r}")
     return found
 
 
@@ -56,7 +57,8 @@ def fetch(target: Union[str, Board], query: Optional[str] = None,
           location: Optional[str] = None, remote: Optional[bool] = None,
           since_days: Optional[int] = None, limit: Optional[int] = None,
           details: Union[None, bool, Callable[[Job], bool]] = None,
-          country: str = "", workday_queries: Optional[Iterable[str]] = None) -> List[Job]:
+          country: str = "", workday_queries: Optional[Iterable[str]] = None,
+          today: Optional[_dt.date] = None, report: Optional[dict] = None) -> List[Job]:
     """Open roles from one employer's board (or every board `detect` finds for a name).
 
     query       words that must all appear in the title (Workday also searches with it)
@@ -64,26 +66,39 @@ def fetch(target: Union[str, Board], query: Optional[str] = None,
     remote      True for remote roles only, False for on-site and hybrid only
     since_days  posted within this many days (roles with no date are kept)
     limit       at most this many roles, newest first
-    details     Workday only: fetch each posting's page for its description (one
-                request each). Defaults to True when `query` narrows the board.
+    details     Workday, Rippling and Polymer: fetch each posting's own record for its
+                description (one request each). Defaults to True when `query` narrows the board.
     country     Workday only: narrow the board to one country by name ("Canada")
+    today       the day "posted 3 days ago" and `since_days` count from (default: today),
+                so a run replayed later dates its roles from its own day
+    report      filled with {board: what failed} for every board read: "error" for a
+                board that could not be read at all, and for Workday the pages that failed
     """
     from .providers import READERS
-    since = (_dt.date.today() - _dt.timedelta(days=since_days)) if since_days else None
+    today = today or _dt.date.today()
+    since = (today - _dt.timedelta(days=since_days)) if since_days else None
     jobs: List[Job] = []
     boards = _boards(target)
     failed: List[BoardError] = []
     for board in boards:
         reader = READERS[board.ats]
+        seen: dict = {}
+        if report is not None:
+            report[str(board)] = seen
         try:
+            pages = _titled(query, bool(query) if details is None else details)
             if board.ats == "workday":
                 queries = list(workday_queries) if workday_queries else (query or None)
-                got = reader.fetch(board.token, query=queries, country=country,
-                                   details=_titled(query, bool(query) if details is None else details),
-                                   where=location or "")
+                got = reader.fetch(board.token, query=queries, country=country, details=pages,
+                                   where=location or "", today=today, report=seen)
+            elif board.ats in ("rippling", "polymer"):
+                got = reader.fetch(board.token, details=pages, report=seen)
+            elif board.ats == "careersite":
+                got = reader.fetch(board.token, queries=[query] if query else None, report=seen)
             else:
                 got = reader.fetch(board.token)
         except BoardError as e:
+            seen["error"] = str(e)
             # One of several boards a name found failing is not a reason to lose the rest.
             if len(boards) == 1:
                 raise

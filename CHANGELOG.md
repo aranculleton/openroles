@@ -1,7 +1,29 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-10-19)
 
+Eleven more systems, read into the same shape, and one reader for careers sites that
+publish no job API at all.
+
+- New readers, each from the vendor's own documented public endpoint unless it says
+  otherwise: Workable, Teamtailor, Personio, Recruitee, Rippling, JazzHR, Gem, Polymer
+  and Manatal; Homerun (the feed every Homerun careers page links to) and ClearCompany
+  (the API its careers widget reads), where robots.txt must allow the read. Workable was
+  built from its documentation and has not yet been run against a live board.
+- `careersite`: any careers site that publishes its jobs for search engines, read from
+  its sitemap and the schema.org `JobPosting` on each job page. This reaches iCIMS and
+  Eightfold sites, among others. Its robots.txt must allow it, its Crawl-delay is kept,
+  and a call reads at most 40 pages, newest first.
+- `Job.workplace`: `remote`, `hybrid`, `onsite` or empty, from the board's own field where
+  it has one. `remote` stays, and is `None` for a hybrid role.
+- `detect` guesses a company's board on every system a name can find, and a careers page
+  on iCIMS or Eightfold is pointed at `careersite:`.
+- Politeness: a site whose robots.txt asks not to be AI input (`Content-Signal:
+  ai-input=no`) is not read; a redirect is followed only where its new host allows it,
+  at most five times; a GET read again in the same process sends its `ETag`; XML that
+  declares a DTD or entities is never parsed.
+- Releases publish from a version tag: PyPI, the GitHub release (its notes from this
+  file) and the MCP Registry, after checking the tag against the package.
 - Workday: a search reads on while its titles keep matching. Workday reports a search's
   total on its first page only, so every term stopped after its second page: 40 roles at
   most, however many the board held.

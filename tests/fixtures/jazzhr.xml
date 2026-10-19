@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jobs>
+  <publisher>JazzHR</publisher>
+  <publisherurl>https://www.jazzhr.com</publisherurl>
+  <lastBuildDate>Mon, 19 Oct 2026 06:00:00 +0000</lastBuildDate>
+  <company>Acme</company>
+  <job>
+    <id>job_20261001000000_ABCDEFGHIJKLMNOP</id>
+    <internalcode></internalcode>
+    <status>Open</status>
+    <title>Inventory Analyst</title>
+    <department>Operations</department>
+    <url>https://acme.applytojob.com/apply/ABCDEFGHIJ/Inventory-Analyst</url>
+    <city>Leeds</city>
+    <state></state>
+    <country>United Kingdom</country>
+    <postalcode>LS1</postalcode>
+    <description><![CDATA[<p>Keep stock right.</p>]]></description>
+    <type>Full Time</type>
+    <experience>Mid Level</experience>
+    <buttons>apply</buttons>
+  </job>
+  <job>
+    <id>job_20261002000000_QRSTUVWXYZABCDEF</id>
+    <status>Closed</status>
+    <title>Old Role</title>
+    <url>https://acme.applytojob.com/apply/KLMNOPQRST/Old-Role</url>
+  </job>
+</jobs>

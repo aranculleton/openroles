@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:tt="https://teamtailor.com/locations">
+  <channel>
+    <title>Acme jobs</title>
+    <description>Open roles at Acme</description>
+    <link>https://acme.teamtailor.com/jobs</link>
+    <item>
+      <title>Data Analyst</title>
+      <description>&lt;p&gt;Forecast demand &amp;amp; build dashboards.&lt;/p&gt;</description>
+      <pubDate>Tue, 06 Oct 2026 09:30:00 +0100</pubDate>
+      <link>https://acme.teamtailor.com/jobs/101-data-analyst</link>
+      <remoteStatus>hybrid</remoteStatus>
+      <guid>0b9c1f7e-1111-4c2b-9f00-000000000101</guid>
+      <tt:locations>
+        <tt:location>
+          <tt:name>North office</tt:name>
+          <tt:address>1 Example Street</tt:address>
+          <tt:zip>LS1 1AA</tt:zip>
+          <tt:city>Leeds</tt:city>
+          <tt:country>United Kingdom</tt:country>
+        </tt:location>
+      </tt:locations>
+      <tt:department>Analytics</tt:department>
+      <tt:role>Analyst</tt:role>
+      <tt:division></tt:division>
+    </item>
+    <item>
+      <title>Support Engineer</title>
+      <description>&lt;p&gt;Help customers.&lt;/p&gt;</description>
+      <pubDate>Fri, 02 Oct 2026 12:00:00 +0000</pubDate>
+      <link>https://acme.teamtailor.com/jobs/102-support-engineer</link>
+      <remoteStatus>fully</remoteStatus>
+      <guid>0b9c1f7e-1111-4c2b-9f00-000000000102</guid>
+      <tt:locations>
+        <tt:location><tt:name>Remote</tt:name></tt:location>
+      </tt:locations>
+      <tt:department>Support</tt:department>
+    </item>
+  </channel>
+</rss>

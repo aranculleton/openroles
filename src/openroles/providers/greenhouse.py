@@ -9,7 +9,7 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text
+from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, workplace_of
 
 HOST = "boards-api.greenhouse.io"
 # `content=true` returns every posting's body, departments and offices in the same request.
@@ -63,5 +63,6 @@ def fetch(token: str) -> List[Job]:
             department=next((d for d in depts if d), ""),
             deadline=str(j.get("application_deadline") or "")[:10],
             description=html_to_text(j.get("content") or "") or None,
+            workplace=workplace_of(location),
         ))
     return out

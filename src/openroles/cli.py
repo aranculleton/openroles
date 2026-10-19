@@ -13,6 +13,7 @@ import sys
 from typing import List, Optional
 
 from . import BoardError, Job, __version__, detect, fetch
+from .models import systems
 
 
 def _table(jobs: List[Job]) -> str:
@@ -40,14 +41,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         for b in boards:
             print(b)
         if not boards:
-            print(f"no Greenhouse, Lever, Ashby or Workday board found for {a.target!r}",
+            print(f"no {systems()} board found for {a.target!r}",
                   file=sys.stderr)
         return 0 if boards else 1
 
     ap = argparse.ArgumentParser(
         prog="openroles",
         description="Every open role, straight from the employer's own ATS "
-                    "(Greenhouse, Lever, Ashby, Workday).",
+                    f"({systems('and')}).",
         epilog="Also: `openroles detect <target>` and `openroles mcp`.")
     ap.add_argument("target", help="a company name, a careers or board URL, or ats:token")
     ap.add_argument("-q", "--query", help="words that must all appear in the title")
@@ -57,7 +58,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("-n", "--limit", type=int, help="at most N roles, newest first")
     ap.add_argument("--country", default="", help="Workday: narrow to one country by name")
     ap.add_argument("--details", action="store_true",
-                    help="Workday: fetch every posting's description (one request each)")
+                    help="Workday, Rippling and Polymer: fetch every posting's description "
+                         "(one request each)")
     ap.add_argument("--json", action="store_true", help="JSON array (the default when piped)")
     ap.add_argument("--jsonl", action="store_true", help="one JSON object per line")
     ap.add_argument("-v", "--verbose", action="store_true")

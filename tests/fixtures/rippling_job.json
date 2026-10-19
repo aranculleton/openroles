@@ -1,0 +1,6 @@
+{"uuid": "0b9c1f7e-0000-4c2b-9f00-000000000201", "name": "Pricing Analyst",
+ "createdOn": "2026-09-30T10:00:00-04:00", "employmentType": {"id": "SALARIED_FT", "label": "Full time"},
+ "workLocations": ["Leeds"],
+ "payRangeDetails": [{"rangeStart": 45000, "rangeEnd": 52000, "currency": "GBP", "frequency": "ANNUAL",
+                      "isRemote": false, "location": "Leeds"}],
+ "description": {"company": "<p>Acme moves freight.</p>", "role": "<p>Price lanes in SQL.</p>"}}

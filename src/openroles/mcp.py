@@ -16,6 +16,7 @@ import sys
 from typing import Optional
 
 from . import BoardError, __version__, detect, fetch
+from .models import systems
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 DESCRIPTION_CHARS = 4000
@@ -23,8 +24,8 @@ DESCRIPTION_CHARS = 4000
 TOOLS = [
     {
         "name": "find_job_board",
-        "description": ("Find which applicant tracking system (Greenhouse, Lever, Ashby or "
-                        "Workday) an employer posts its jobs on. Give a company name, its "
+        "description": (f"Find which applicant tracking system ({systems()}) an employer "
+                        "posts its jobs on. Give a company name, its "
                         "careers page URL or a job board URL. Returns boards as ats:token, "
                         "which list_open_roles accepts."),
         "inputSchema": {
@@ -74,7 +75,7 @@ def call_tool(name: str, args: dict) -> dict:
         if name == "find_job_board":
             boards = detect(str(args.get("target") or ""))
             return _result([str(b) for b in boards] if boards else
-                           "no Greenhouse, Lever, Ashby or Workday board found")
+                           f"no {systems()} board found")
         if name == "list_open_roles":
             jobs = fetch(str(args.get("target") or ""), query=args.get("query") or None,
                          location=args.get("location") or None,

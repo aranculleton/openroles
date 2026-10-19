@@ -12,7 +12,7 @@ from typing import List, Optional, Tuple
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean
+from ..models import BoardError, Job, RobotsDisallowed, clean, workplace_of
 
 HOSTS = ("https://api.lever.co", "https://api.eu.lever.co")
 PATH = "/v0/postings/{token}?mode=json"
@@ -91,7 +91,10 @@ def fetch(token: str) -> List[Job]:
             continue
         cats = j.get("categories") or {}
         location = clean(cats.get("location"))
-        every = [clean(x) for x in cats.get("allLocations") or [] if clean(x)]
+        # Lever's docs do not say what an allLocations entry is: a name, or an object.
+        every = [clean(x.get("location") or x.get("name")) if isinstance(x, dict) else clean(x)
+                 for x in cats.get("allLocations") or []]
+        every = list(dict.fromkeys(x for x in every if x))
         workplace = clean(j.get("workplaceType")).lower()
         out.append(Job(
             id=f"lv-{j.get('id')}",
@@ -107,5 +110,6 @@ def fetch(token: str) -> List[Job]:
             employment_type=clean(cats.get("commitment")),
             compensation=_pay(j),
             description=_description(j),
+            workplace=workplace_of(workplace),
         ))
     return out

@@ -96,7 +96,7 @@ def in_page(url: str) -> List[Board]:
 # Small words that do not make a name distinctive.
 _SMALL = {"and", "of", "the", "for", "de", "la", "le", "du", "des", "und", "y", "et"}
 # Words that open many employers' names, so one alone is somebody else's board as often as
-# this employer's: "Bank of Montreal" is not the board "bank".
+# this employer's: "Bank of Brackenhollow" is not the board "bank".
 _GENERIC = {"bank", "first", "national", "royal", "united", "american", "canadian", "british",
             "global", "international", "general", "city", "state", "new", "north", "south",
             "east", "west", "central", "my", "open", "data", "digital", "health", "capital",

@@ -62,10 +62,10 @@ def test_workdays_other_host_is_read_at_the_tenants_own_address():
 
 
 def test_a_long_name_is_never_shortened_to_its_first_word():
-    assert slugs("Bank of Northfield") == ["bankofnorthfield", "bank-of-northfield"]
+    assert slugs("Bank of Brackenhollow") == ["bankofbrackenhollow", "bank-of-brackenhollow"]
     assert slugs("Kestrel Mutual") == ["kestrelmutual", "kestrel-mutual", "kestrel"]
-    assert slugs("First National Bank of Northfield") == [
-        "firstnationalbankofnorthfield", "first-national-bank-of-northfield"]
+    assert slugs("brackenhollow lantern savings trust") == [
+        "brackenhollowlanternsavingstrust", "brackenhollow-lantern-savings-trust"]
     assert slugs("Acme.com") == ["acme"]
 
 

@@ -25,7 +25,7 @@
   (`accountName`), and reads a Workday board linked at `wdN.myworkdaysite.com/recruiting/`
   at the tenant's own address.
 - `detect` never guesses a long name's first word alone, nor a generic one ("Bank of
-  Northfield" is not the board "bank"), and tries a bare domain such as "Acme.com" as a name
+  Brackenhollow" is not the board "bank"), and tries a bare domain such as "Acme.com" as a name
   when its home page links to no board. A careers page on a system openroles cannot read
   (SuccessFactors, iCIMS, Taleo, Oracle, SmartRecruiters) is named in a warning.
 

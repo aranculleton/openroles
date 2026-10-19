@@ -71,14 +71,45 @@ def fetch(target: Union[str, Board], query: Optional[str] = None,
     from .providers import READERS
     since = (_dt.date.today() - _dt.timedelta(days=since_days)) if since_days else None
     jobs: List[Job] = []
-    for board in _boards(target):
+    boards = _boards(target)
+    failed: List[BoardError] = []
+    for board in boards:
         reader = READERS[board.ats]
-        if board.ats == "workday":
-            queries = list(workday_queries) if workday_queries else (query or None)
-            got = reader.fetch(board.token, query=queries, country=country,
-                               details=bool(query) if details is None else details)
-        else:
-            got = reader.fetch(board.token)
+        try:
+            if board.ats == "workday":
+                queries = list(workday_queries) if workday_queries else (query or None)
+                got = reader.fetch(board.token, query=queries, country=country,
+                                   details=_titled(query, bool(query) if details is None else details),
+                                   where=location or "")
+            else:
+                got = reader.fetch(board.token)
+        except BoardError as e:
+            # One of several boards a name found failing is not a reason to lose the rest.
+            if len(boards) == 1:
+                raise
+            failed.append(e)
+            continue
         jobs.extend(j for j in got if _matches(j, query, location, remote, since))
+    if failed:
+        if len(failed) == len(boards):
+            raise failed[0]
+        import logging
+        logging.getLogger("openroles").warning(
+            "%d of %d boards could not be read: %s", len(failed), len(boards),
+            "; ".join(str(e) for e in failed))
     jobs.sort(key=lambda j: j.posted or "", reverse=True)
     return jobs[:limit] if limit else jobs
+
+
+def _titled(query: Optional[str], details: Union[bool, Callable[[Job], bool]]):
+    """`details`, asked only of postings whose title passes `query`: a page fetched for a
+    posting the title filter then drops was a wasted request."""
+    if not query or details is False:
+        return details
+    words = query.lower().split()
+
+    def wanted(job: Job) -> bool:
+        if not all(w in job.title.lower() for w in words):
+            return False
+        return details(job) if callable(details) else True
+    return wanted

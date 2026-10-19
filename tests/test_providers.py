@@ -61,7 +61,7 @@ def test_ashby_respects_robots(web):
 def test_workday_listing_details_and_safety(web):
     web.routes["/wday/cxs/acme/External/jobs"] = fixture("workday_list.json")
     web.routes["/wday/cxs/acme/External/job/"] = fixture("workday_job.json")
-    jobs = workday.fetch("acme.wd3/External", details=lambda j: "Locations" in j.location,
+    jobs = workday.fetch("acme.wd3/External", details=lambda j: "more" in j.location,
                          today=TODAY)
     assert [j.title for j in jobs] == ["Demand Planner", "Logistics Analyst"]  # the bad path is refused
     planner, analyst = jobs

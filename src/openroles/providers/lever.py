@@ -1,7 +1,9 @@
 """Lever: one request a board, every posting's description included.
 
 Lever hosts boards in two regions. A board the global API does not know is tried on
-the EU one before it is called missing.
+the EU one before it is called missing. The postings API is documented as public, so
+only an explicit Disallow in a host's robots.txt stops a read there, and the
+Crawl-delay both hosts declare is kept.
 """
 from __future__ import annotations
 
@@ -10,7 +12,7 @@ from typing import List, Optional, Tuple
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, clean
+from ..models import BoardError, Job, RobotsDisallowed, clean
 
 HOSTS = ("https://api.lever.co", "https://api.eu.lever.co")
 PATH = "/v0/postings/{token}?mode=json"
@@ -25,19 +27,28 @@ def _epoch_ms_date(ms) -> str:
 
 
 def _postings(token: str) -> Tuple[Optional[list], str]:
-    why = ""
+    why, refused = "", []
     for host in HOSTS:
+        no = _http.robots_refuses(host.split("//", 1)[1], [f"/v0/postings/{quote(token, safe='')}"])
+        if no:
+            refused.append(no)
+            continue
         data, err = _http.request(host + PATH.format(token=quote(token, safe="")))
         # Lever answers an unknown board with {"ok": false, ...}, not a 404.
         if isinstance(data, list):
             return data, ""
         # The global region's answer explains more than the EU's 404 does.
         why = why or err or "not a posting list"
+    if len(refused) == len(HOSTS):
+        raise RobotsDisallowed(f"lever:{token}: {refused[0]}")
     return None, why
 
 
 def exists(token: str) -> bool:
-    return _postings(token)[0] is not None
+    try:
+        return _postings(token)[0] is not None
+    except RobotsDisallowed:
+        return False
 
 
 def _description(j: dict) -> Optional[str]:

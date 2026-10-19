@@ -46,6 +46,35 @@ def _groups(text: str) -> dict:
     return out
 
 
+def crawl_delay(text: str, agent: str) -> float:
+    """Seconds between requests the robots.txt asks of `agent` (its own group, else "*"),
+    or 0 for none. Crawl-delay is not in RFC 9309, but a host that writes one means it."""
+    delays: dict = {}
+    agents: list = []
+    expect = True
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or ":" not in line:
+            continue
+        field, _, value = line.partition(":")
+        field, value = field.strip().lower(), value.strip()
+        if field == "user-agent":
+            if not expect:
+                agents, expect = [], True
+            agents.append(value.lower())
+        elif agents:
+            expect = False
+            if field == "crawl-delay":
+                try:
+                    seconds = float(value)
+                except ValueError:
+                    continue
+                for a in agents:
+                    delays[a] = max(0.0, seconds)
+    own = delays.get(agent.lower())
+    return own if own is not None else delays.get("*", 0.0)
+
+
 def _match(pattern: str, path: str) -> int:
     """Length of the match under RFC 9309 wildcards, or -1. Patterns are percent-decoded."""
     if pattern == "":

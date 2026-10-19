@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- Workday: a search reads on while its titles keep matching. Workday reports a search's
+  total on its first page only, so every term stopped after its second page: 40 roles at
+  most, however many the board held.
+- Workday: `country` is found under whatever facet the board files countries in (some use
+  a location hierarchy) and under any of its names ("United States of America" for
+  "United States"). A board with no place filter at all is read whole, with a warning,
+  instead of returning nothing.
+- Workday: a posting listed as "3 Locations" reads as its primary location "and 2 more",
+  and a `location` filter on another place reads its page to check. Past the 2,000 roles
+  Workday pages, a warning says so.
+- Fewer requests: a Workday posting's page is fetched only when its title passes `query`,
+  and none past `limit`. Responses come gzipped.
+- One board failing no longer loses the others a company name found.
+- Greenhouse: every office a posting lists counts as one of its locations, so a posting
+  located "Hybrid" with its city under its offices is found by a place filter.
+- Politeness: a host's `Crawl-delay` is kept between requests (Lever asks for one second);
+  Greenhouse and Lever stop at an explicit Disallow in their robots.txt; robots.txt is
+  read again after 24 hours, which matters to a long-running `openroles mcp`.
+
 ## 0.1.2 (2026-10-17)
 
 - Workday: a posting's location is read from its path when the listing leaves

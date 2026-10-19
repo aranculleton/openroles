@@ -57,11 +57,16 @@ against a real board, without pasting that board's data.
 ## Releases
 
 Maintainers bump `__version__` in `src/openroles/__init__.py` and both versions in
-`server.json`, turn the CHANGELOG's `Unreleased` heading into `## X.Y.Z (date)`, merge,
-and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`. The publish workflow checks
-the tag against all three, builds the package, publishes it to PyPI, creates the GitHub
-release from the CHANGELOG entry and lists the server in the MCP Registry. A tag that
-disagrees with the package publishes nothing.
+`server.json`, turn the CHANGELOG's `Unreleased` heading into `## X.Y.Z (date)`, and
+merge. The publish workflow sees a version with no `vX.Y.Z` tag yet, checks the three
+agree, builds the package, publishes it to PyPI, then tags the commit, creates the GitHub
+release from the CHANGELOG entry and lists the server in the MCP Registry. Nobody pushes a
+tag or opens a page. A version that disagrees publishes nothing, and one already tagged is
+never published again.
+
+Version numbers follow [semantic versioning](https://semver.org): a patch (0.2.1) for
+fixes only, a minor (0.3.0) for anything new or changed that a user would notice, and a
+major for a change that makes someone change their code.
 
 ## Conduct
 

@@ -81,3 +81,8 @@ def fetch(token: str) -> List[Job]:
             workplace=workplace_of(place),
         ))
     return out
+
+
+def hosts(token: str) -> List[str]:
+    """The hosts reading this board calls, for a network allowlist. Nothing is fetched."""
+    return [HOST]

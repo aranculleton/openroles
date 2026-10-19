@@ -271,3 +271,9 @@ def fetch(token: str, queries: Optional[Iterable[str]] = None, limit: int = LIMI
     if report is not None:
         report.update(pages_listed=len(listed), pages_read=len(todo), page_errors=errors)
     return jobs
+
+
+def hosts(token: str) -> List[str]:
+    """The hosts reading this board calls, for a network allowlist. Nothing is fetched."""
+    host, _prefix = site_of(token)
+    return [host] if host else []

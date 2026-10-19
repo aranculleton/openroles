@@ -116,3 +116,8 @@ def fetch(token: str) -> List[Job]:
     if err:
         raise BoardError(f"ashby:{token}: the board did not answer ({err})")
     return rows(token, data)
+
+
+def hosts(token: str) -> List[str]:
+    """The hosts reading this board calls, for a network allowlist. Nothing is fetched."""
+    return [HOST]

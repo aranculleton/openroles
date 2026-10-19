@@ -113,3 +113,8 @@ def fetch(token: str) -> List[Job]:
             workplace=workplace_of(workplace),
         ))
     return out
+
+
+def hosts(token: str) -> List[str]:
+    """The hosts reading this board calls, for a network allowlist. Nothing is fetched."""
+    return [h.split("//", 1)[1] for h in HOSTS]

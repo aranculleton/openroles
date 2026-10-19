@@ -14,6 +14,8 @@ publish no job API at all.
   its sitemap and the schema.org `JobPosting` on each job page. This reaches iCIMS and
   Eightfold sites, among others. Its robots.txt must allow it, its Crawl-delay is kept,
   and a call reads at most 40 pages, newest first.
+- `openroles.hosts()` and `openroles hosts`: the hosts reading a board calls, for a
+  network allowlist, without a request for a board given as `ats:token`.
 - `Job.workplace`: `remote`, `hybrid`, `onsite` or empty, from the board's own field where
   it has one. `remote` stays, and is `None` for a hybrid role.
 - `detect` guesses a company's board on every system a name can find, and a careers page

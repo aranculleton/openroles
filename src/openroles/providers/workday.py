@@ -453,3 +453,9 @@ def fetch(token: str, query: Union[None, str, Iterable[str]] = None, country: st
             _summarise(board.errors + list(failed.values())),
             f"; {len(failed)} posting(s) kept without a description" if failed else "")
     return jobs
+
+
+def hosts(token: str) -> List[str]:
+    """The hosts reading this board calls, for a network allowlist. Nothing is fetched."""
+    m = TOKEN.match(token or "")
+    return [f"{m['tenant']}.{m['dc']}.myworkdayjobs.com"] if m else []

@@ -94,3 +94,8 @@ def fetch(token: str) -> List[Job]:
             workplace="remote" if remote and all("remote" in p.lower() for p in places) else workplace_of(*places),
         ))
     return out
+
+
+def hosts(token: str) -> List[str]:
+    """The hosts reading this board calls, for a network allowlist. Nothing is fetched."""
+    return [HOST]

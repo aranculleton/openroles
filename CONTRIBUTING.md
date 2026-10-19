@@ -37,8 +37,8 @@ its robots.txt, and its terms do not forbid it. The README's "Not supported" tab
 why each system there was left out; a check that changes one of those answers is as
 welcome as a reader.
 
-1. Add `src/openroles/providers/<ats>.py` with `fetch(token) -> list[Job]` and
-   `exists(token) -> bool`. Quote the vendor's own words for the endpoint in its
+1. Add `src/openroles/providers/<ats>.py` with `fetch(token) -> list[Job]`,
+   `exists(token) -> bool` and `hosts(token) -> list[str]` (every host a read calls). Quote the vendor's own words for the endpoint in its
    docstring. Check robots.txt first: `_http.robots_refuses` (an explicit Disallow stops
    it) where the endpoint is documented as public, `_http.robots_allows` (it must be
    readable and allow) everywhere else.

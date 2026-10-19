@@ -19,13 +19,24 @@ from typing import Callable, Iterable, List, Optional, Union
 from .models import ATS, Board, BoardError, Job, RobotsDisallowed
 
 __all__ = ["ATS", "Board", "BoardError", "Job", "RobotsDisallowed", "__version__",
-           "detect", "fetch"]
+           "detect", "fetch", "hosts"]
 
 
 def detect(target: str) -> List[Board]:
     """The job boards behind a board URL, "ats:token", a careers page or a company name."""
     from .discover import detect as _detect
     return _detect(target)
+
+
+def hosts(target: Union[str, Board]) -> List[str]:
+    """Every host reading `target` calls, for a network allowlist: "greenhouse:acme" is
+    ["boards-api.greenhouse.io"]. A board or "ats:token" fetches nothing; a company name or
+    a careers page is looked up with `detect` first."""
+    from .providers import READERS
+    out: List[str] = []
+    for board in _boards(target):
+        out.extend(h for h in READERS[board.ats].hosts(board.token) if h not in out)
+    return out
 
 
 def _boards(target: Union[str, Board]) -> List[Board]:

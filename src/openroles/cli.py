@@ -2,6 +2,7 @@
 
     openroles <company, careers URL, board URL or ats:token> [filters]
     openroles detect <company or URL>
+    openroles hosts <company, URL or ats:token>   # the hosts to allow in a network policy
     openroles mcp                      # serve the tools to an MCP client over stdio
 """
 from __future__ import annotations
@@ -12,7 +13,7 @@ import logging
 import sys
 from typing import List, Optional
 
-from . import BoardError, Job, __version__, detect, fetch
+from . import BoardError, Job, __version__, detect, fetch, hosts
 from .models import systems
 
 
@@ -45,11 +46,27 @@ def main(argv: Optional[List[str]] = None) -> int:
                   file=sys.stderr)
         return 0 if boards else 1
 
+    if argv and argv[0] == "hosts":
+        ap = argparse.ArgumentParser(prog="openroles hosts",
+                                     description="The hosts reading a board calls, one a line, "
+                                                 "for a network allowlist.")
+        ap.add_argument("target", nargs="+")
+        a = ap.parse_args(argv[1:])
+        seen: List[str] = []
+        try:
+            for target in a.target:
+                seen.extend(h for h in hosts(target) if h not in seen)
+        except BoardError as e:
+            print(f"openroles: {e}", file=sys.stderr)
+            return 1
+        print("\n".join(seen))
+        return 0
+
     ap = argparse.ArgumentParser(
         prog="openroles",
         description="Every open role, straight from the employer's own ATS "
                     f"({systems('and')}).",
-        epilog="Also: `openroles detect <target>` and `openroles mcp`.")
+        epilog="Also: `openroles detect <target>`, `openroles hosts <target>` and `openroles mcp`.")
     ap.add_argument("target", help="a company name, a careers or board URL, or ats:token")
     ap.add_argument("-q", "--query", help="words that must all appear in the title")
     ap.add_argument("-l", "--location", help="text that must appear in a location")

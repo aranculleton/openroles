@@ -51,6 +51,7 @@ openroles figma --location "New York"              # filter by place (--remote f
 openroles https://adobe.wd5.myworkdayjobs.com/external_experienced \
           --query "data scientist" --details       # Workday, with each posting's description
 openroles detect "Figma"                           # which ATS, and the board's token
+openroles hosts greenhouse:figma lever:zoox         # the hosts to allow in a network policy
 openroles personio:acme                            # any system, as ats:token
 openroles careersite:careers.acme.example          # a careers site with no job API
 openroles linear --json > roles.json               # JSON (the default when piped), or --jsonl
@@ -69,6 +70,9 @@ for job in jobs:
     print(job.posted, job.title, job.location, job.url)
 
 job.to_dict()   # plain JSON-ready dict
+
+openroles.hosts("personio:acme")
+# ['acme.jobs.personio.de', 'acme.jobs.personio.com']: what a firewall must allow
 ```
 
 `fetch()` raises `openroles.BoardError` when a board cannot be read (a wrong token, no

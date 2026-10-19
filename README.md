@@ -118,10 +118,15 @@ Every role, from every system, has the same fields:
 
 | ATS | Requests | Notes |
 |---|---|---|
-| Greenhouse | 1 per board | descriptions included |
+| Greenhouse | 1 per board | descriptions included; every office a posting lists counts as one of its locations |
 | Lever | 1 per board | descriptions with their requirement lists; EU boards found automatically |
 | Ashby | 1 per board | descriptions and posted pay included |
-| Workday | 1 per 20 roles, plus 1 per description | `--query` searches the board; `--country` narrows it; `--details` fetches descriptions |
+| Workday | 1 per 20 roles, plus 1 per description | `--query` searches the board, reading on while titles keep matching; `--country` narrows it by whatever facet the board files countries under; `--details` fetches descriptions, only for roles whose title passes `--query` |
+
+A Workday posting listed as "3 Locations" reads as its primary location "and 2 more"; with
+`--location` on a place that is not its primary, its page is read to see whether the place
+is one of the others. Workday pages a board only to its first 2,000 roles: past that, a
+warning says to search with `--query`.
 
 `detect` finds a board from a company name (Greenhouse, Lever and Ashby, by trying the
 names an employer is likely to use), from any board URL, and from a careers page that
@@ -135,8 +140,12 @@ to every crawler except LinkedIn's, so `openroles` does not read it.
 
 - **robots.txt is read first** for Ashby, Workday and any careers page, and a refusal is
   honoured, never worked around. For Workday the careers site's own rules count too.
-- **At most two requests in flight per host**, a timeout on every call, and an honest
-  `User-Agent` naming this project.
+  Greenhouse and Lever document their endpoints as public APIs, so there an explicit
+  Disallow stops a read and a robots.txt that cannot be read does not.
+- **A host's `Crawl-delay` is kept** between requests once its robots.txt is read (Lever
+  asks for one second), and a robots.txt is read again after a day, as RFC 9309 asks.
+- **At most two requests in flight per host**, a timeout on every call, gzip on the wire,
+  and an honest `User-Agent` naming this project.
 - **A Workday board that answers 429 or 503 is left alone** for the rest of the run.
 
 ## Is this allowed?

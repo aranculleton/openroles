@@ -29,7 +29,7 @@ TOKEN = re.compile(r"^(?P<tenant>[a-z0-9][a-z0-9-]*)\.(?P<dc>wd\d{1,3})/"
 SITE_URL = re.compile(r"https?://(?P<tenant>[a-z0-9][a-z0-9-]*)\.(?P<dc>wd\d{1,3})"
                       r"\.myworkdayjobs\.com/(?:[a-z]{2}-[A-Za-z]{2}/)?"
                       r"(?P<site>[A-Za-z0-9][A-Za-z0-9_-]*)", re.I)
-MULTI = re.compile(r"^\s*\d+\s+locations?\s*$", re.I)
+MULTI = re.compile(r"^\s*(\d+)\s+locations?\s*$", re.I)
 # A posting's path inside its board, and nothing else. It comes from the listing's
 # structured `externalPath`, and anything that could point elsewhere is refused.
 _PATH = re.compile(r"^/job/[^\s?#\\]+$")
@@ -64,6 +64,31 @@ def posted_on(text, today: dt.date) -> str:
     else:
         days = int(m.group(2))
     return (today - dt.timedelta(days=days)).isoformat()
+
+
+# The names one country goes by on Workday boards. A board's facet says "United States
+# of America" where a caller says "United States", and an exact match found nothing.
+_COUNTRY_ALIASES = (
+    ("united states", "united states of america", "usa", "us", "u.s.", "u.s.a."),
+    ("united kingdom", "uk", "u.k.", "great britain", "gb",
+     "united kingdom of great britain and northern ireland"),
+    ("south korea", "korea, republic of", "republic of korea", "korea"),
+    ("czechia", "czech republic"),
+    ("netherlands", "the netherlands", "holland"),
+    ("united arab emirates", "uae"),
+    ("turkey", "türkiye", "turkiye"),
+)
+
+
+def country_names(country) -> frozenset:
+    """Every spelling of a country a board may use, lower case; empty for none."""
+    want = clean(country).lower()
+    if not want:
+        return frozenset()
+    for group in _COUNTRY_ALIASES:
+        if want in group:
+            return frozenset(group)
+    return frozenset({want})
 
 
 def with_country(label, country) -> str:
@@ -179,10 +204,16 @@ class WorkdayBoard:
     def country_facet(facets, country: str = "", country_id: str = "") -> Tuple[dict, Optional[int]]:
         """({facetParameter: [id]}, count) for the board's facet value for one country.
 
-        The facet's own name differs between tenants (locationCountry, Country, ...),
-        so it is found by its value: a country name, or Workday's id for it.
+        The facet's own name differs between tenants (locationCountry, Country, and on
+        some boards a location hierarchy such as locationHierarchy1), so it is found by
+        its value: a country name in any of the spellings Workday uses ("United States
+        of America" for "United States"), or Workday's id for it. A facet named for
+        countries wins over one that only holds them.
         """
-        want = clean(country).lower()
+        names = country_names(country)
+        if not names and not country_id:
+            return {}, None
+        best = None
         stack = [f for f in facets or [] if isinstance(f, dict)]
         while stack:
             facet = stack.pop()
@@ -194,10 +225,11 @@ class WorkdayBoard:
                     stack.append(v)
                     continue
                 name = clean(v.get("descriptor")).lower()
-                if "country" in param.lower() and v.get("id") and (want or country_id) and (
-                        v.get("id") == country_id or (want and name == want)):
-                    return {param: [v["id"]]}, v.get("count")
-        return {}, None
+                if v.get("id") and param and (v.get("id") == country_id or name in names):
+                    rank = 0 if "country" in param.lower() else 1
+                    if best is None or rank < best[0]:
+                        best = (rank, {param: [v["id"]]}, v.get("count"))
+        return (best[1], best[2]) if best else ({}, None)
 
     def all_postings(self, facets: dict, total: int, first=None, limit: Optional[int] = None):
         """Every posting on the board (or on its slice for one country)."""
@@ -220,7 +252,7 @@ class WorkdayBoard:
         """
         def one(term):
             stems = [w[:5] for w in term.split()]
-            found, errs = [], []
+            found, errs, total = [], [], 0
             for n in range(SEARCH_PAGES):
                 data, err = self.page(facets, term, n * PAGE)
                 if err or not isinstance(data, dict):
@@ -230,7 +262,10 @@ class WorkdayBoard:
                 found.extend(posts)
                 hits = sum(1 for p in posts
                            if all(s in str(p.get("title") or "").lower() for s in stems))
-                if hits < SATURATED or (n + 1) * PAGE >= int(data.get("total") or 0):
+                # Workday reports the total on the first page only, and 0 on every later
+                # one: read afresh, it ended every term after its second page.
+                total = total or int(data.get("total") or 0)
+                if not posts or hits < SATURATED or (n + 1) * PAGE >= total:
                     break
             return found, errs
 
@@ -248,7 +283,14 @@ class WorkdayBoard:
         title = clean(posting.get("title"))
         if not title or not _valid(path):
             return None
-        where = clean(posting.get("locationsText")) or path_place(path)
+        where = clean(posting.get("locationsText"))
+        primary = path_place(path)
+        many = MULTI.match(where)
+        # "3 Locations" names none of them, and read as nowhere to a filter by place. The
+        # primary is in the path; the rest are on the posting's page (`detailed`).
+        if many and primary:
+            where = f"{primary} and {int(many[1]) - 1} more" if int(many[1]) > 1 else primary
+        where = where or primary
         remote = clean(posting.get("remoteType")).lower()
         return Job(
             id=f"wd-{self.tenant}-{path.rsplit('/', 1)[-1]}",
@@ -257,7 +299,7 @@ class WorkdayBoard:
             title=title,
             url=self.public_url(path),
             location=where,
-            locations=[where] if where else [],
+            locations=[primary] if many and primary else ([where] if where else []),
             remote=True if (remote == "remote" or "remote" in where.lower()) else None,
             posted=posted_on(posting.get("postedOn"), today),
         )
@@ -292,15 +334,24 @@ def _valid(path) -> bool:
             and ".." not in path and "//" not in path)
 
 
+def _log():
+    import logging
+    return logging.getLogger("openroles")
+
+
 def fetch(token: str, query: Union[None, str, Iterable[str]] = None, country: str = "",
           details: Details = False, limit: Optional[int] = None,
-          today: Optional[dt.date] = None) -> List[Job]:
+          today: Optional[dt.date] = None, where: str = "") -> List[Job]:
     """Every posting on a Workday board, or the ones `query` finds.
 
     `details` decides which postings get their page fetched (one request each) for
     the description, every location and the dates: False for none, True for all, or a
     function that is given the listing-level Job and answers yes or no. Postings whose
     page could not be read keep their listing-level fields.
+
+    `where` is a place the caller will filter on. A posting listed as "N Locations"
+    whose primary location is not that place has its page read too, because only the
+    page says whether it is one of the others.
     """
     today = today or dt.date.today()
     board = WorkdayBoard(token)
@@ -308,11 +359,18 @@ def fetch(token: str, query: Union[None, str, Iterable[str]] = None, country: st
     first = board.first()
     facets, in_country = board.country_facet(first.get("facets"), country)
     if country and not facets:
-        return []
+        if first.get("facets"):
+            # The board lists its places and this country is not among them.
+            return []
+        _log().warning("workday:%s: the board offers no place filter, so %r could not be "
+                       "applied: every posting is returned", token, country)
     total = int((in_country if in_country is not None else first.get("total")) or 0)
     if query:
         listing = board.search(facets, [query] if isinstance(query, str) else query)
     else:
+        if total > MAX_OFFSET and not limit:
+            _log().warning("workday:%s: the board holds %d postings and Workday pages only the "
+                           "first %d; pass a query to search the rest", token, total, MAX_OFFSET)
         listing = board.all_postings(facets, total,
                                      None if facets else first["jobPostings"], limit)
     jobs, postings, seen = [], [], set()
@@ -322,8 +380,16 @@ def fetch(token: str, query: Union[None, str, Iterable[str]] = None, country: st
             seen.add(p["externalPath"])
             jobs.append(job)
             postings.append(p)
+    if limit:
+        # The same postings come back either way; a page past the limit was a wasted request.
+        jobs, postings = jobs[:limit], postings[:limit]
+    place = clean(where).lower()
+
+    def located(i: int) -> bool:
+        return bool(place and MULTI.match(clean(postings[i].get("locationsText")))
+                    and place not in " ".join(jobs[i].locations).lower())
     want = [i for i, j in enumerate(jobs)
-            if details is True or (callable(details) and details(j))]
+            if details is True or (callable(details) and details(j)) or located(i)]
     pages = _parallel(lambda i: board.detail(postings[i]["externalPath"]), want)
     failed = 0
     for i, (detail, err) in zip(want, pages):
@@ -331,8 +397,7 @@ def fetch(token: str, query: Union[None, str, Iterable[str]] = None, country: st
             failed += 1
             board.errors.append(err or "a posting page that was not a posting")
     if board.errors:
-        import logging
-        logging.getLogger("openroles").warning(
+        _log().warning(
             "workday:%s: %d request(s) failed (%s)%s", token, len(board.errors),
             _summarise(board.errors),
             f"; {failed} posting(s) kept without a description" if failed else "")

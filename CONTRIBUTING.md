@@ -46,7 +46,11 @@ welcome as a reader.
    `discover.py` (its board URL pattern, so `detect` finds it, and `GUESSED` if a board
    can be found from a company name).
 3. Add an invented fixture and tests: the fields, an unknown board, robots.txt saying no.
-4. Add a row to the README's "Supported systems" table and a line to `CHANGELOG.md`.
+4. Add a row to the README's "Supported systems" table and an item to `CHANGELOG.md`.
+
+Each CHANGELOG item opens with its headline in bold, one sentence that says what changed
+for someone reading nothing else, under `### New`, `### Changed` or `### Fixed`; the detail
+follows it. The release page shows the headlines alone (`scripts/release_notes.py`).
 
 ## Pull requests
 

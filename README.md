@@ -130,7 +130,10 @@ warning says to search with `--query`.
 
 `detect` finds a board from a company name (Greenhouse, Lever and Ashby, by trying the
 names an employer is likely to use), from any board URL, and from a careers page that
-links to or embeds one. A Workday board cannot be guessed from a name: give its URL.
+links to or embeds one, however the page writes it. A Workday board cannot be guessed
+from a name: give its URL (either `tenant.wdN.myworkdayjobs.com` or
+`wdN.myworkdaysite.com/recruiting/tenant`). When a careers page uses a system openroles
+cannot read, a warning names it.
 
 Not supported, because none publishes an open board this way: SuccessFactors, Oracle,
 iCIMS and custom careers sites. SmartRecruiters publishes one, but its robots.txt closes it

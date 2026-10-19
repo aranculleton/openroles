@@ -20,6 +20,14 @@
 - Politeness: a host's `Crawl-delay` is kept between requests (Lever asks for one second);
   Greenhouse and Lever stop at an explicit Disallow in their robots.txt; robots.txt is
   read again after 24 hours, which matters to a long-running `openroles mcp`.
+- `detect` finds a board written without a scheme (`//boards.greenhouse.io/...`), inside
+  JSON or a script with its slashes escaped, or named in Lever's embedded job list
+  (`accountName`), and reads a Workday board linked at `wdN.myworkdaysite.com/recruiting/`
+  at the tenant's own address.
+- `detect` never guesses a long name's first word alone, nor a generic one ("Bank of
+  Brackenhollow" is not the board "bank"), and tries a bare domain such as "Acme.com" as a name
+  when its home page links to no board. A careers page on a system openroles cannot read
+  (SuccessFactors, iCIMS, Taleo, Oracle, SmartRecruiters) is named in a warning.
 
 ## 0.1.2 (2026-10-17)
 

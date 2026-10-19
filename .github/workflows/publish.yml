@@ -1,46 +1,68 @@
 name: Publish
 
-# Runs when a version tag is pushed (git tag v0.2.0 && git push origin v0.2.0). It checks
-# the tag against the package, builds it, publishes it to PyPI (trusted publishing, so no
-# token is stored anywhere), creates the GitHub release from the CHANGELOG entry, and then
-# lists the server in the MCP Registry. Nobody has to open a page and press a button, and
-# a tag that disagrees with the package publishes nothing.
+# Publishes a version when it reaches main: a push that changes the version (in
+# src/openroles/__init__.py and server.json) with no v<version> tag yet builds the package,
+# publishes it to PyPI (trusted publishing, so no token is stored anywhere), then tags the
+# commit and creates the GitHub release from the CHANGELOG entry, and lists the server in
+# the MCP Registry. Nobody has to open a page, press a button or push a tag. A version
+# already tagged is never published again, and one that disagrees between the package,
+# server.json and the CHANGELOG publishes nothing and fails here, where it is seen.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths: [src/openroles/__init__.py, server.json, CHANGELOG.md, .github/workflows/publish.yml]
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      new: ${{ steps.version.outputs.new }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - name: The tag matches the package, server.json and the changelog
+      - name: The version agrees everywhere, and is it new
+        id: version
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          pkg=$(python -c "import re; print(re.search(r'__version__ = \"(.+?)\"', open('src/openroles/__init__.py').read()).group(1))")
-          for v in "$pkg" "$(jq -r .version server.json)" "$(jq -r '.packages[0].version' server.json)"; do
-            if [ "$v" != "$tag" ]; then
-              echo "the tag is $tag but a version in the repo says $v: bump them to match" >&2
+          v=$(python -c "import re; print(re.search(r'__version__ = \"(.+?)\"', open('src/openroles/__init__.py').read()).group(1))")
+          for other in "$(jq -r .version server.json)" "$(jq -r '.packages[0].version' server.json)"; do
+            if [ "$other" != "$v" ]; then
+              echo "the package says $v but server.json says $other: bump them to match" >&2
               exit 1
             fi
           done
-          grep -q "^## $tag (" CHANGELOG.md || { echo "CHANGELOG.md has no '## $tag (' entry" >&2; exit 1; }
-      - run: pip install build
-      - run: python -m build
-      - uses: actions/upload-artifact@v7
+          grep -q "^## $v (" CHANGELOG.md || { echo "CHANGELOG.md has no '## $v (' entry" >&2; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$v" >/dev/null; then
+            echo "v$v is already published"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.version.outputs.new == 'true'
+        run: pip install build && python -m build
+      - if: steps.version.outputs.new == 'true'
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
 
   publish:
     needs: build
+    if: needs.build.outputs.new == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: pypi
@@ -52,11 +74,14 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # A run that stopped after PyPI and before the release is run again in full.
+          skip-existing: true
 
-  # The GitHub release, made only once PyPI has the package, with the CHANGELOG entry as
-  # its notes and the built files attached.
+  # The tag and the GitHub release, made only once PyPI has the package, on the commit
+  # that was published, with the CHANGELOG entry as its notes and the built files attached.
   release:
-    needs: publish
+    needs: [build, publish]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -69,7 +94,7 @@ jobs:
           path: dist/
       - name: Notes from the changelog
         run: |
-          python - "${GITHUB_REF_NAME#v}" > notes.md <<'PY'
+          python - "${{ needs.build.outputs.version }}" > notes.md <<'PY'
           import re, sys
           tag = sys.argv[1]
           text = open("CHANGELOG.md", encoding="utf-8").read()
@@ -79,7 +104,8 @@ jobs:
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+          V: v${{ needs.build.outputs.version }}
+        run: gh release create "$V" dist/* --target "$GITHUB_SHA" --title "$V" --notes-file notes.md
 
   # The official MCP Registry lists the server once PyPI has the release: it checks
   # the README on PyPI for the mcp-name line, so this runs after the upload. GitHub's

@@ -27,8 +27,9 @@ publish no job API at all.
   ai-input=no`) is not read; a redirect is followed only where its new host allows it,
   at most five times; a GET read again in the same process sends its `ETag`; XML that
   declares a DTD or entities is never parsed.
-- Releases publish from a version tag: PyPI, the GitHub release (its notes from this
-  file) and the MCP Registry, after checking the tag against the package.
+- Releases publish themselves when a new version reaches main: PyPI, then the tag and the
+  GitHub release (its notes from this file), then the MCP Registry. A version that
+  disagrees between the package, `server.json` and this file publishes nothing.
 - Workday: a search reads on while its titles keep matching. Workday reports a search's
   total on its first page only, so every term stopped after its second page: 40 roles at
   most, however many the board held.

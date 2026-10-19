@@ -10,7 +10,7 @@ name: Publish
 on:
   push:
     branches: [main]
-    paths: [src/openroles/__init__.py, server.json, CHANGELOG.md, .github/workflows/publish.yml]
+    paths: [src/openroles/__init__.py, server.json, CHANGELOG.md, scripts/release_notes.py, .github/workflows/publish.yml]
   workflow_dispatch:
 
 permissions:
@@ -93,19 +93,33 @@ jobs:
           name: dist
           path: dist/
       - name: Notes from the changelog
-        run: |
-          python - "${{ needs.build.outputs.version }}" > notes.md <<'PY'
-          import re, sys
-          tag = sys.argv[1]
-          text = open("CHANGELOG.md", encoding="utf-8").read()
-          m = re.search(r"^## " + re.escape(tag) + r" \(.*?\)\n(.*?)(?=^## |\Z)", text, re.M | re.S)
-          print(m.group(1).strip() if m else f"openroles {tag}")
-          PY
+        run: python scripts/release_notes.py "${{ needs.build.outputs.version }}" > notes.md
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
           V: v${{ needs.build.outputs.version }}
         run: gh release create "$V" dist/* --target "$GITHUB_SHA" --title "$V" --notes-file notes.md
+
+  # A version already released gets its page's notes rewritten when the CHANGELOG entry
+  # changes, so a correction or a shorter summary reaches the release page too.
+  notes:
+    needs: build
+    if: needs.build.outputs.new == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rewrite the release notes if they changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: v${{ needs.build.outputs.version }}
+        run: |
+          python scripts/release_notes.py "${V#v}" > notes.md
+          gh release view "$V" --json body --jq .body > now.md || exit 0
+          if [ "$(cat now.md)" = "$(cat notes.md)" ]; then echo "notes unchanged"; exit 0; fi
+          gh release edit "$V" --notes-file notes.md
 
   # The official MCP Registry lists the server once PyPI has the release: it checks
   # the README on PyPI for the mcp-name line, so this runs after the upload. GitHub's

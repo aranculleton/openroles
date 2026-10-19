@@ -29,6 +29,11 @@ TOKEN = re.compile(r"^(?P<tenant>[a-z0-9][a-z0-9-]*)\.(?P<dc>wd\d{1,3})/"
 SITE_URL = re.compile(r"https?://(?P<tenant>[a-z0-9][a-z0-9-]*)\.(?P<dc>wd\d{1,3})"
                       r"\.myworkdayjobs\.com/(?:[a-z]{2}-[A-Za-z]{2}/)?"
                       r"(?P<site>[A-Za-z0-9][A-Za-z0-9_-]*)", re.I)
+# The same board on Workday's other host: https://wdN.myworkdaysite.com/recruiting/<tenant>/<Site>.
+# Its API answers there too, but its robots.txt does not (it answered 422), so the board is
+# read at the tenant's own myworkdayjobs.com address, whose robots.txt can be read.
+MY_SITE = re.compile(r"https?://(?P<dc>wd\d{1,3})\.myworkdaysite\.com/(?:[a-z]{2}-[A-Za-z]{2}/)?"
+                     r"recruiting/(?P<tenant>[a-z0-9][a-z0-9-]*)/(?P<site>[A-Za-z0-9][A-Za-z0-9_-]*)", re.I)
 MULTI = re.compile(r"^\s*(\d+)\s+locations?\s*$", re.I)
 # A posting's path inside its board, and nothing else. It comes from the listing's
 # structured `externalPath`, and anything that could point elsewhere is refused.
@@ -43,7 +48,7 @@ def token_from(text: str) -> Optional[str]:
     text = (text or "").strip()
     if TOKEN.match(text):
         return text
-    m = SITE_URL.search(text)
+    m = SITE_URL.search(text) or MY_SITE.search(text)
     if not m or m["site"].lower() in ("wday", "en-us"):
         return None
     return f"{m['tenant'].lower()}.{m['dc'].lower()}/{m['site']}"

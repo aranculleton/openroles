@@ -41,3 +41,22 @@ def test_hosts_without_a_request(web, target, want):
 def test_the_cli_prints_them_one_a_line(capsys):
     assert main(["hosts", "greenhouse:acme", "lever:acme", "greenhouse:other"]) == 0
     assert capsys.readouterr().out.split() == ["boards-api.greenhouse.io", "api.lever.co", "api.eu.lever.co"]
+
+
+def test_an_application_names_itself_and_its_agents(web):
+    from openroles import _http
+    saved = (_http.USER_AGENT, _http.AGENTS, _http.RESPECT_AI_INPUT)
+    try:
+        openroles.configure(user_agent="acme-search/2.0 (+https://acme.example)",
+                            robots_agents=["acme-search", "*"])
+        assert _http.USER_AGENT.startswith("acme-search/2.0")
+        assert _http.AGENTS == ("*", "openroles", "acme-search")      # never fewer than the defaults
+        openroles.configure(user_agent="x/1")                          # agents are kept
+        assert _http.AGENTS == ("*", "openroles", "acme-search")
+        web.robots["boards.acme.example"] = (200, "User-agent: acme-search\nDisallow: /jobs\n")
+        ok, why = openroles.robots_allows("boards.acme.example", ["/jobs"])
+        assert not ok and "disallows /jobs" in why
+        with pytest.raises(ValueError):
+            openroles.configure(user_agent=" ")
+    finally:
+        _http.USER_AGENT, _http.AGENTS, _http.RESPECT_AI_INPUT = saved

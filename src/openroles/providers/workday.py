@@ -131,7 +131,7 @@ def path_place(path) -> str:
     Some tenants leave `locationsText` out of the listing, and a blank location
     reads as "nowhere" to anything that filters by place. Workday writes the
     primary location into every posting's path, so that is the fallback:
-    "Toronto-40-King-St-W-Corp" reads "Toronto 40 King St W Corp".
+    "Leeds-1-Example-Street-Office" reads "Leeds 1 Example Street Office".
     """
     parts = str(path or "").split("/")
     return clean(" ".join(unquote(parts[2]).split("-"))) if len(parts) > 3 else ""

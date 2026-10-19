@@ -14,12 +14,45 @@ from __future__ import annotations
 __version__ = "0.2.0"
 
 import datetime as _dt
-from typing import Callable, Iterable, List, Optional, Union
+from typing import Callable, Iterable, List, Optional, Tuple, Union
 
 from .models import ATS, Board, BoardError, Job, RobotsDisallowed
 
 __all__ = ["ATS", "Board", "BoardError", "Job", "RobotsDisallowed", "__version__",
-           "detect", "fetch", "hosts"]
+           "configure", "detect", "fetch", "hosts", "robots_allows"]
+
+
+def configure(user_agent: Optional[str] = None, robots_agents: Optional[Iterable[str]] = None,
+              respect_ai_input: Optional[bool] = None) -> None:
+    """Settings for an application that embeds openroles, for the rest of the process.
+    Anything left as None keeps its current value.
+
+    user_agent        the User-Agent every request sends. Name your application and how to
+                      reach you, as openroles' own does.
+    robots_agents     more agents whose robots.txt rules are kept, such as your own
+                      application's name: a Disallow written for any of them stops a read,
+                      as one written for "*" or "openroles" always does.
+    respect_ai_input  False only where nothing read is ever passed to an AI model: a site
+                      whose robots.txt says "Content-Signal: ai-input=no" is then read.
+    """
+    from . import _http
+    if user_agent is not None:
+        if not user_agent.strip():
+            raise ValueError("user_agent must name the application sending the requests")
+        _http.USER_AGENT = user_agent.strip()
+    if robots_agents is not None:
+        extra = [a.strip() for a in robots_agents if a and a.strip()]
+        _http.AGENTS = tuple(dict.fromkeys(["*", "openroles", *extra]))
+    if respect_ai_input is not None:
+        _http.RESPECT_AI_INPUT = bool(respect_ai_input)
+
+
+def robots_allows(host: str, paths: Iterable[str]) -> Tuple[bool, str]:
+    """(may these paths on `host` be read, why), from its robots.txt, the way openroles
+    decides for a board with no documented public API: the policy must be readable and must
+    allow every path for every agent `configure` names."""
+    from . import _http
+    return _http.robots_allows(host, list(paths))
 
 
 def detect(target: str) -> List[Board]:
@@ -79,7 +112,7 @@ def fetch(target: Union[str, Board], query: Optional[str] = None,
     limit       at most this many roles, newest first
     details     Workday, Rippling and Polymer: fetch each posting's own record for its
                 description (one request each). Defaults to True when `query` narrows the board.
-    country     Workday only: narrow the board to one country by name ("Canada")
+    country     Workday only: narrow the board to one country by name ("Germany")
     today       the day "posted 3 days ago" and `since_days` count from (default: today),
                 so a run replayed later dates its roles from its own day
     report      filled with {board: what failed} for every board read: "error" for a

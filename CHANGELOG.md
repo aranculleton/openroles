@@ -16,6 +16,9 @@ publish no job API at all.
   and a call reads at most 40 pages, newest first.
 - `openroles.hosts()` and `openroles hosts`: the hosts reading a board calls, for a
   network allowlist, without a request for a board given as `ats:token`.
+- `openroles.configure()`: an application embedding openroles sets its own User-Agent and
+  the robots.txt agents it answers to (never fewer than `*` and `openroles`), and
+  `openroles.robots_allows()` asks robots.txt the way openroles does.
 - `Job.workplace`: `remote`, `hybrid`, `onsite` or empty, from the board's own field where
   it has one. `remote` stays, and is `None` for a hybrid role.
 - `detect` guesses a company's board on every system a name can find, and a careers page

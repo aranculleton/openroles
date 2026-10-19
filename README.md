@@ -78,6 +78,24 @@ openroles.hosts("personio:acme")
 `fetch()` raises `openroles.BoardError` when a board cannot be read (a wrong token, no
 answer), and `openroles.RobotsDisallowed` when the host's robots.txt says no.
 
+### In your own application
+
+openroles is a library first: the CLI and the MCP server are thin layers over `fetch` and
+`detect`. An application that embeds it names itself once, at start-up:
+
+```python
+openroles.configure(
+    user_agent="acme-jobs/1.0 (+https://acme.example/contact)",  # sent with every request
+    robots_agents=["acme-jobs"],   # a Disallow for your agent stops a read too
+)
+```
+
+Everything a search decides for itself stays a parameter: `query`, `location`, `remote`,
+`since_days`, `country`, and `details`, which can be a function that says which postings
+are worth a request for their description. `report={}` comes back filled with what failed
+on each board. `openroles.robots_allows(host, paths)` answers the same robots.txt question
+openroles asks itself, for anything else your application fetches.
+
 ## For AI agents (MCP)
 
 <!-- mcp-name: io.github.aranculleton/openroles -->

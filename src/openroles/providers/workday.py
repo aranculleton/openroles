@@ -17,10 +17,11 @@ from typing import Callable, Iterable, List, Optional, Tuple, Union
 from urllib.parse import quote, unquote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text
+from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, workplace_of
 
 PAGE = 20            # Workday serves at most 20 postings a page
 MAX_OFFSET = 2000    # and stops paging at an offset of 2,000
+PAGE_ALL_MAX = 1000  # past this many, a board is searched with `large_queries` when given
 SEARCH_PAGES = 5     # a search term's pages read at most
 SATURATED = 15       # a term's next page is read only while this many titles still match
 
@@ -35,6 +36,7 @@ SITE_URL = re.compile(r"https?://(?P<tenant>[a-z0-9][a-z0-9-]*)\.(?P<dc>wd\d{1,3
 MY_SITE = re.compile(r"https?://(?P<dc>wd\d{1,3})\.myworkdaysite\.com/(?:[a-z]{2}-[A-Za-z]{2}/)?"
                      r"recruiting/(?P<tenant>[a-z0-9][a-z0-9-]*)/(?P<site>[A-Za-z0-9][A-Za-z0-9_-]*)", re.I)
 MULTI = re.compile(r"^\s*(\d+)\s+locations?\s*$", re.I)
+_MORE = re.compile(r" and \d+ more$")
 # A posting's path inside its board, and nothing else. It comes from the listing's
 # structured `externalPath`, and anything that could point elsewhere is refused.
 _PATH = re.compile(r"^/job/[^\s?#\\]+$")
@@ -96,9 +98,29 @@ def country_names(country) -> frozenset:
     return frozenset({want})
 
 
+def _workplace(remote_type, labels) -> str:
+    """The board's own remoteType first. Without one, a location decides only when every
+    location says the same: one remote site among on-site ones does not make the job remote."""
+    own = workplace_of(remote_type)
+    if own:
+        return own
+    found = {workplace_of(x) for x in labels if x}
+    return found.pop() if len(found) == 1 and "" not in found and not _MORE.search(labels[0] or "") else ""
+
+
+def more_places(job: Job) -> bool:
+    """True for a listing-level Job whose posting names more places than it shows: the
+    listing said "N Locations", and only the posting's page names the rest."""
+    return bool(_MORE.search(job.location or ""))
+
+
+BARE_REMOTE = re.compile(r"^\W*(fully |100% )?remote\W*$", re.I)
+
+
 def with_country(label, country) -> str:
+    """A bare "Remote" borrows the country the board recorded beside it."""
     label, country = clean(label), clean(country)
-    if country and label.lower().strip(" -") in ("remote", "fully remote", "100% remote"):
+    if country and BARE_REMOTE.match(label):
         return f"{label}, {country}"
     return label
 
@@ -109,7 +131,7 @@ def path_place(path) -> str:
     Some tenants leave `locationsText` out of the listing, and a blank location
     reads as "nowhere" to anything that filters by place. Workday writes the
     primary location into every posting's path, so that is the fallback:
-    "Toronto-40-King-St-W-Corp" reads "Toronto 40 King St W Corp".
+    "Leeds-1-Example-Street-Office" reads "Leeds 1 Example Street Office".
     """
     parts = str(path or "").split("/")
     return clean(" ".join(unquote(parts[2]).split("-"))) if len(parts) > 3 else ""
@@ -156,7 +178,7 @@ class WorkdayBoard:
         self.host = f"{m['tenant']}.{m['dc']}.myworkdayjobs.com"
         self.api = f"https://{self.host}/wday/cxs/{self.tenant}/{self.site}"
         self.halt = threading.Event()
-        self.errors: List[str] = []
+        self.errors: List[str] = []          # listing pages that failed
 
     # -------------------------------------------------------------- calls
 
@@ -307,6 +329,7 @@ class WorkdayBoard:
             locations=[primary] if many and primary else ([where] if where else []),
             remote=True if (remote == "remote" or "remote" in where.lower()) else None,
             posted=posted_on(posting.get("postedOn"), today),
+            workplace=_workplace(posting.get("remoteType"), [where]),
         )
 
     def detailed(self, job: Job, posting: dict, detail, today: dt.date) -> Optional[Job]:
@@ -327,6 +350,7 @@ class WorkdayBoard:
         job.location = "; ".join(labels)
         job.remote = True if (remote == "remote" or any("remote" in x.lower() for x in labels)) \
             else job.remote
+        job.workplace = _workplace(info.get("remoteType") or posting.get("remoteType"), labels)
         job.posted = str(info.get("startDate") or "")[:10] or job.posted
         job.employment_type = clean(info.get("timeType"))
         job.deadline = str(info.get("endDate") or "")[:10]
@@ -346,7 +370,9 @@ def _log():
 
 def fetch(token: str, query: Union[None, str, Iterable[str]] = None, country: str = "",
           details: Details = False, limit: Optional[int] = None,
-          today: Optional[dt.date] = None, where: str = "") -> List[Job]:
+          today: Optional[dt.date] = None, where: str = "", country_id: str = "",
+          large_queries: Optional[Iterable[str]] = None, page_all_max: int = PAGE_ALL_MAX,
+          report: Optional[dict] = None, strict_country: bool = True) -> List[Job]:
     """Every posting on a Workday board, or the ones `query` finds.
 
     `details` decides which postings get their page fetched (one request each) for
@@ -357,21 +383,39 @@ def fetch(token: str, query: Union[None, str, Iterable[str]] = None, country: st
     `where` is a place the caller will filter on. A posting listed as "N Locations"
     whose primary location is not that place has its page read too, because only the
     page says whether it is one of the others.
+
+    `country_id` is Workday's own id for the country, the same on every tenant seen,
+    tried beside the name. `large_queries`: a board holding more than `page_all_max`
+    postings (after the country) is searched with these terms instead of paged, so a
+    caller does not page through a thousand roles to find its own, and a board past
+    Workday's 2,000 is read at all.
+
+    A board whose facets do not list the country has no roles filed there, and returns
+    none; with `strict_country=False` it is read whole instead, for a caller that filters
+    by place itself and wants a remote role filed under another country.
+
+    `report`, when given, is filled in: "listing_errors" (pages that failed),
+    "detail_errors" ({job id: why} for postings whose page could not be read) and
+    "details_asked" (how many pages were asked for).
     """
     today = today or dt.date.today()
     board = WorkdayBoard(token)
     board.check_robots()
     first = board.first()
-    facets, in_country = board.country_facet(first.get("facets"), country)
-    if country and not facets:
+    facets, in_country = board.country_facet(first.get("facets"), country, country_id)
+    if (country or country_id) and not facets:
         if first.get("facets"):
             # The board lists its places and this country is not among them.
-            return []
-        _log().warning("workday:%s: the board offers no place filter, so %r could not be "
-                       "applied: every posting is returned", token, country)
+            if strict_country:
+                return []
+        else:
+            _log().warning("workday:%s: the board offers no place filter, so %r could not be "
+                           "applied: every posting is returned", token, country or country_id)
     total = int((in_country if in_country is not None else first.get("total")) or 0)
     if query:
         listing = board.search(facets, [query] if isinstance(query, str) else query)
+    elif large_queries is not None and total > page_all_max:
+        listing = board.search(facets, large_queries)
     else:
         if total > MAX_OFFSET and not limit:
             _log().warning("workday:%s: the board holds %d postings and Workday pages only the "
@@ -396,14 +440,22 @@ def fetch(token: str, query: Union[None, str, Iterable[str]] = None, country: st
     want = [i for i, j in enumerate(jobs)
             if details is True or (callable(details) and details(j)) or located(i)]
     pages = _parallel(lambda i: board.detail(postings[i]["externalPath"]), want)
-    failed = 0
+    failed: dict = {}
     for i, (detail, err) in zip(want, pages):
         if err or board.detailed(jobs[i], postings[i], detail, today) is None:
-            failed += 1
-            board.errors.append(err or "a posting page that was not a posting")
-    if board.errors:
+            failed[jobs[i].id] = err or "a posting page that was not a posting"
+    if report is not None:
+        report.update(listing_errors=list(board.errors), detail_errors=dict(failed),
+                      details_asked=len(want))
+    if board.errors or failed:
         _log().warning(
-            "workday:%s: %d request(s) failed (%s)%s", token, len(board.errors),
-            _summarise(board.errors),
-            f"; {failed} posting(s) kept without a description" if failed else "")
-    return jobs[:limit] if limit else jobs
+            "workday:%s: %d request(s) failed (%s)%s", token, len(board.errors) + len(failed),
+            _summarise(board.errors + list(failed.values())),
+            f"; {len(failed)} posting(s) kept without a description" if failed else "")
+    return jobs
+
+
+def hosts(token: str) -> List[str]:
+    """The hosts reading this board calls, for a network allowlist. Nothing is fetched."""
+    m = TOKEN.match(token or "")
+    return [f"{m['tenant']}.{m['dc']}.myworkdayjobs.com"] if m else []

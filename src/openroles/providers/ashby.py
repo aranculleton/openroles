@@ -8,7 +8,7 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text
+from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, workplace_of
 
 HOST = "api.ashbyhq.com"
 URL = "https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true"
@@ -22,10 +22,8 @@ def _address(entry: dict) -> dict:
 
 def with_country(label: str, country: str) -> str:
     """A bare "Remote" borrows the country the ATS recorded beside it."""
-    label, country = clean(label), clean(country)
-    if country and label.lower().strip(" -") in ("remote", "fully remote", "100% remote"):
-        return f"{label}, {country}"
-    return label
+    from .workday import with_country as same
+    return same(label, country)
 
 
 def label(entry: dict, fallback_country: str = "") -> str:
@@ -96,12 +94,15 @@ def rows(token: str, data: object) -> List[Job]:
             location="; ".join(labels),
             locations=labels,
             remote=remote,
+            # Ashby's publishedAt is when the job was last published, and the board gives
+            # no first-published date: a re-published role reads as new.
             posted=str(j.get("publishedAt") or "")[:10],
             department=clean(j.get("department") or j.get("team")),
             employment_type=clean(j.get("employmentType")),
             compensation=_pay(j),
             description=(clean_block(j.get("descriptionPlain"))
                          or html_to_text(str(j.get("descriptionHtml") or "")) or None),
+            workplace=workplace_of(workplace) or ("remote" if remote else ""),
         ))
     return out
 
@@ -115,3 +116,8 @@ def fetch(token: str) -> List[Job]:
     if err:
         raise BoardError(f"ashby:{token}: the board did not answer ({err})")
     return rows(token, data)
+
+
+def hosts(token: str) -> List[str]:
+    """The hosts reading this board calls, for a network allowlist. Nothing is fetched."""
+    return [HOST]

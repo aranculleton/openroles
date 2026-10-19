@@ -115,3 +115,10 @@ def test_fetch_filters_and_sorts(web):
     assert [j.id for j in openroles.fetch("greenhouse:acme", remote=True)] == ["gh-102"]
     assert [j.id for j in openroles.fetch("greenhouse:acme", location="london")] == ["gh-101"]
     assert [j.id for j in openroles.fetch("greenhouse:acme")] == ["gh-102", "gh-101"]
+
+
+def test_lever_reads_a_location_entry_whether_name_or_object(web):
+    data = fixture("lever.json")
+    data[0]["categories"]["allLocations"] = ["Manchester", {"location": "Leeds"}, {"name": "York"}, {}]
+    web.routes["api.lever.co/v0/postings/acme"] = data
+    assert lever.fetch("acme")[0].locations == ["Manchester", "Leeds", "York"]

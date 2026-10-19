@@ -100,3 +100,60 @@ def test_greenhouse_reads_every_office_a_posting_lists(web):
     assert job.locations == ["Hybrid", "Leeds, United Kingdom", "Head office"]
     import openroles
     assert [j.id for j in openroles.fetch("greenhouse:acme", location="leeds")] == ["gh-102"]
+
+
+def test_a_redirect_to_another_host_is_followed_only_where_its_robots_allows(monkeypatch):
+    import urllib.error
+
+    class Answer(io.BytesIO):
+        headers: dict = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def urlopen(req, timeout=0):
+        url = req.full_url
+        if url.startswith("https://www.boards.example/"):
+            raise urllib.error.HTTPError(url, 301, "Moved", {"Location": "https://apply.boards.example/api/x"}, None)
+        if url == "https://apply.boards.example/api/x":
+            return Answer(b'{"ok": true}')
+        raise AssertionError(url)
+    monkeypatch.setattr(_http, "_urlopen", urlopen)
+    monkeypatch.setattr(_http, "_ETAGS", type(_http._ETAGS)())
+    monkeypatch.setattr(_http, "robots_txt", lambda host: (404, ""))
+    assert _http.request("https://www.boards.example/api/x") == ({"ok": True}, None)
+    monkeypatch.setattr(_http, "robots_txt",
+                        lambda host: (200, "User-agent: *\nDisallow: /api/\n") if host.startswith("apply.")
+                        else (404, ""))
+    body, err = _http.request("https://www.boards.example/api/x")
+    assert body is None and "apply.boards.example" in err and "disallows" in err
+
+
+def test_redirects_are_not_followed_for_ever(monkeypatch):
+    import urllib.error
+
+    def urlopen(req, timeout=0):
+        raise urllib.error.HTTPError(req.full_url, 302, "Found", {"Location": "/again"}, None)
+    monkeypatch.setattr(_http, "_urlopen", urlopen)
+    monkeypatch.setattr(_http, "_ETAGS", type(_http._ETAGS)())
+    body, err = _http.request_raw("https://loop.example/start")
+    assert body == "" and "redirects" in err
+
+
+def test_a_site_that_asks_not_to_be_ai_input_is_not_read(web, monkeypatch):
+    web.routes["boards-api.greenhouse.io/v1/boards/acme/jobs"] = fixture("greenhouse.json")
+    web.robots["boards-api.greenhouse.io"] = (200, "User-agent: *\nAllow: /\n"
+                                                   "Content-Signal: search=yes, ai-input=no\n")
+    with pytest.raises(RobotsDisallowed, match="AI input"):
+        greenhouse.fetch("acme")
+    ok, why = _http.robots_allows("boards-api.greenhouse.io", ["/v1/boards/acme"])
+    assert not ok and "ai-input=no" in why
+    # Yes, or no signal at all, reads as before; and a caller may switch it off.
+    web.robots["boards-api.greenhouse.io"] = (200, "User-agent: *\nContent-Signal: ai-input=yes\n")
+    assert len(greenhouse.fetch("acme")) == 2
+    web.robots["boards-api.greenhouse.io"] = (200, "User-agent: *\nContent-Signal: ai-input=no\n")
+    monkeypatch.setattr(_http, "RESPECT_AI_INPUT", False)
+    assert len(greenhouse.fetch("acme")) == 2

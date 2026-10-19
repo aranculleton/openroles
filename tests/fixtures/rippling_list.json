@@ -1,0 +1,12 @@
+{"items": [
+  {"id": "0b9c1f7e-0000-4c2b-9f00-000000000201", "name": "Pricing Analyst",
+   "url": "https://ats.rippling.com/acme/jobs/0b9c1f7e-0000-4c2b-9f00-000000000201", "language": "en",
+   "department": {"name": "Finance"},
+   "locations": [{"name": "Leeds", "country": "United Kingdom", "countryCode": "GB", "state": "England",
+                  "stateCode": "ENG", "city": "Leeds", "workplaceType": "HYBRID"}]},
+  {"id": "0b9c1f7e-0000-4c2b-9f00-000000000202", "name": "Support Lead",
+   "url": "https://ats.rippling.com/acme/jobs/0b9c1f7e-0000-4c2b-9f00-000000000202", "language": "en",
+   "department": {"name": "Support"},
+   "locations": [{"name": "Remote (UK)", "country": "United Kingdom", "countryCode": "GB",
+                  "workplaceType": "REMOTE"}]}
+], "page": 0, "pageSize": 1000, "totalItems": 2, "totalPages": 1}

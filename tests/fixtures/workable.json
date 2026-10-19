@@ -1,0 +1,10 @@
+{"name": "Acme", "description": "<p>Freight people.</p>", "jobs": [
+  {"title": "Route Planner", "shortcode": "ABC123", "code": "RP-1", "employment_type": "Full-time",
+   "telecommuting": false, "workplace_type": "hybrid", "department": "Operations",
+   "url": "https://apply.workable.com/acme/j/ABC123/apply/", "application_url": "https://apply.workable.com/acme/j/ABC123/",
+   "shortlink": "https://apply.workable.com/j/ABC123", "country": "United Kingdom", "state": "England", "city": "Leeds",
+   "published_on": "2026-10-03", "created_at": "2026-10-01", "description": "<p>Plan routes.</p>"},
+  {"title": "Data Engineer", "shortcode": "DEF456", "telecommuting": true, "workplace_type": "",
+   "application_url": "https://apply.workable.com/acme/j/DEF456/", "country": "United Kingdom",
+   "published_on": "2026-10-07"}
+]}

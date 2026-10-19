@@ -1,10 +1,13 @@
-name: Publish to PyPI
+name: Publish
 
-# Runs when a GitHub release is published. PyPI trusts this workflow directly
-# (trusted publishing), so no token is stored anywhere.
+# Runs when a version tag is pushed (git tag v0.2.0 && git push origin v0.2.0). It checks
+# the tag against the package, builds it, publishes it to PyPI (trusted publishing, so no
+# token is stored anywhere), creates the GitHub release from the CHANGELOG entry, and then
+# lists the server in the MCP Registry. Nobody has to open a page and press a button, and
+# a tag that disagrees with the package publishes nothing.
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: read
@@ -18,6 +21,17 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - name: The tag matches the package, server.json and the changelog
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(python -c "import re; print(re.search(r'__version__ = \"(.+?)\"', open('src/openroles/__init__.py').read()).group(1))")
+          for v in "$pkg" "$(jq -r .version server.json)" "$(jq -r '.packages[0].version' server.json)"; do
+            if [ "$v" != "$tag" ]; then
+              echo "the tag is $tag but a version in the repo says $v: bump them to match" >&2
+              exit 1
+            fi
+          done
+          grep -q "^## $tag (" CHANGELOG.md || { echo "CHANGELOG.md has no '## $tag (' entry" >&2; exit 1; }
       - run: pip install build
       - run: python -m build
       - uses: actions/upload-artifact@v7
@@ -39,6 +53,34 @@ jobs:
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
 
+  # The GitHub release, made only once PyPI has the package, with the CHANGELOG entry as
+  # its notes and the built files attached.
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - name: Notes from the changelog
+        run: |
+          python - "${GITHUB_REF_NAME#v}" > notes.md <<'PY'
+          import re, sys
+          tag = sys.argv[1]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          m = re.search(r"^## " + re.escape(tag) + r" \(.*?\)\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+          print(m.group(1).strip() if m else f"openroles {tag}")
+          PY
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+
   # The official MCP Registry lists the server once PyPI has the release: it checks
   # the README on PyPI for the mcp-name line, so this runs after the upload. GitHub's
   # own login (OIDC) proves the io.github.aranculleton namespace; no secret.
@@ -51,15 +93,6 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - name: The release tag matches server.json
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          for v in "$(jq -r .version server.json)" "$(jq -r '.packages[0].version' server.json)"; do
-            if [ "$v" != "$tag" ]; then
-              echo "server.json says $v but the release is $tag: bump it to match" >&2
-              exit 1
-            fi
-          done
       - name: Install mcp-publisher
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher

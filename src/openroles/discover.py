@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from . import _http
 from .models import ATS, Board
-from .providers import ashby, greenhouse, lever, workday
+from .providers import READERS, workday
 
 _SLUG = r"([A-Za-z0-9][A-Za-z0-9_.-]*)"
 PATTERNS = [
@@ -19,6 +19,26 @@ PATTERNS = [
     ("lever", re.compile(r"api(?:\.eu)?\.lever\.co/v0/postings/" + _SLUG, re.I)),
     ("ashby", re.compile(r"jobs\.ashbyhq\.com/" + _SLUG, re.I)),
     ("ashby", re.compile(r"api\.ashbyhq\.com/posting-api/job-board/" + _SLUG, re.I)),
+    ("personio", re.compile(r"(?<![\w.-])([a-z0-9][a-z0-9-]*)\.jobs\.personio\.(?:de|com)\b", re.I)),
+    ("teamtailor", re.compile(r"(?<![\w.-])([a-z0-9][a-z0-9-]*)\.teamtailor\.com\b", re.I)),
+    ("recruitee", re.compile(r"(?<![\w.-])([a-z0-9][a-z0-9-]*)\.recruitee\.com\b", re.I)),
+    ("workable", re.compile(r"apply\.workable\.com/(?:api/v\d/(?:widget/)?accounts/)?" + _SLUG, re.I)),
+    ("workable", re.compile(r"workable\.com/api/accounts/" + _SLUG, re.I)),
+    ("workable", re.compile(r"(?<![\w.-])([a-z0-9][a-z0-9-]*)\.workable\.com\b", re.I)),
+    ("rippling", re.compile(r"ats\.rippling\.com/" + _SLUG, re.I)),
+    ("rippling", re.compile(r"api\.rippling\.com/platform/api/ats/v\d/board/" + _SLUG, re.I)),
+    ("jazzhr", re.compile(r"app\.jazz\.co/feeds/export/jobs/" + _SLUG, re.I)),
+    ("jazzhr", re.compile(r"(?<![\w.-])([a-z0-9][a-z0-9-]*)\.applytojob\.com\b", re.I)),
+    ("gem", re.compile(r"jobs\.gem\.com/" + _SLUG, re.I)),
+    ("gem", re.compile(r"api\.gem\.com/job_board/v0/" + _SLUG, re.I)),
+    ("polymer", re.compile(r"jobs\.polymer\.co/" + _SLUG, re.I)),
+    ("polymer", re.compile(r"api\.polymer\.co/v1/hire/organizations/" + _SLUG, re.I)),
+    ("manatal", re.compile(r"api\.manatal\.com/open/v\d/career-page/" + _SLUG, re.I)),
+    ("manatal", re.compile(r"careers-page\.com/" + _SLUG, re.I)),
+    ("homerun", re.compile(r"feed\.homerun\.co/" + _SLUG, re.I)),
+    ("homerun", re.compile(r"(?<![\w.-])([a-z0-9][a-z0-9-]*)\.homerun\.co\b", re.I)),
+    ("clearcompany", re.compile(r"career-site\.js\?siteId=([0-9a-f]{8}-[0-9a-f-]{27})", re.I)),
+    ("clearcompany", re.compile(r"careers-api\.clearcompany\.com/v1/([0-9a-f]{8}-[0-9a-f-]{27})", re.I)),
 ]
 # Lever's embedded job list names its board in a script, not a link:
 # window.leverJobsOptions = {accountName: 'acme', ...}.
@@ -28,14 +48,23 @@ _LEVER_EMBED = re.compile(r"leverJobsOptions[^}]{0,400}?accountName['\"]?\s*:\s*
 UNSUPPORTED = [
     ("SuccessFactors", re.compile(r"\b(?:career\d*\.)?successfactors\.(?:com|eu)\b|\bjobs\.sap\.com\b", re.I),
      "its robots.txt disallows reading"),
-    ("iCIMS", re.compile(r"\.icims\.com\b", re.I), "it publishes no open job board"),
+    ("iCIMS", re.compile(r"\.icims\.com\b", re.I),
+     "it publishes no open job API; if the careers site publishes its jobs for search engines, "
+     "read it as careersite:<the site's address>"),
+    ("Eightfold", re.compile(r"\.eightfold\.ai\b", re.I),
+     "it publishes no open job API; if the careers site publishes its jobs for search engines, "
+     "read it as careersite:<the site's address>"),
     ("Taleo", re.compile(r"\.taleo\.net\b", re.I), "it publishes no open job board"),
     ("Oracle Recruiting", re.compile(r"\.oraclecloud\.com/hcmUI/CandidateExperience", re.I),
      "its job API is marked for internal use"),
     ("SmartRecruiters", re.compile(r"\b(?:jobs|careers)\.smartrecruiters\.com\b", re.I),
      "its robots.txt closes it to every crawler but LinkedIn's"),
 ]
-_NOT_A_BOARD = {"embed", "js", "v1", "api", "static", "assets", "favicon.ico", "robots.txt"}
+_NOT_A_BOARD = {"embed", "js", "v1", "api", "static", "assets", "favicon.ico", "robots.txt",
+                # the vendors' own sites, not an employer's board
+                "www", "app", "docs", "support", "help", "status", "blog", "careers-api",
+                "apply", "resources", "internal", "j", "open", "feed", "404", "jobs",
+                "developers", "feeds"}
 
 
 def parse(text: str) -> Optional[Board]:
@@ -121,16 +150,18 @@ def slugs(company: str) -> List[str]:
     return [s for s in dict.fromkeys(out) if s]
 
 
-def guess(company: str) -> List[Board]:
-    """Boards found by trying the employer's likely board names on Greenhouse, Lever and Ashby.
+# Tried by name, most common first. Workday cannot be guessed from a name (its address
+# needs a tenant, a data centre and a site name): give its careers URL instead.
+GUESSED = ("greenhouse", "lever", "ashby", "workable", "teamtailor", "recruitee", "personio",
+           "rippling", "jazzhr", "gem", "polymer", "manatal", "homerun")
 
-    Workday cannot be guessed from a name (its address needs a tenant, a data centre
-    and a site name): give its careers URL instead.
-    """
+
+def guess(company: str) -> List[Board]:
+    """Boards found by trying the employer's likely board names on every system a name can find."""
     found = []
     for slug in slugs(company):
-        for ats, reader in (("greenhouse", greenhouse), ("lever", lever), ("ashby", ashby)):
-            if reader.exists(slug):
+        for ats in GUESSED:
+            if READERS[ats].exists(slug):
                 board = Board(ats, slug)
                 if board not in found:
                     found.append(board)

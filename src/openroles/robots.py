@@ -4,7 +4,8 @@ from __future__ import annotations
 import re
 from urllib.parse import unquote
 
-_DIRECTIVES = ("user-agent", "allow", "disallow", "sitemap", "crawl-delay", "host")
+_DIRECTIVES = ("user-agent", "allow", "disallow", "sitemap", "crawl-delay", "host",
+               "content-signal")
 
 
 def is_robots_body(text: str) -> bool:
@@ -43,6 +44,47 @@ def _groups(text: str) -> dict:
             expect = False
             for a in agents:
                 out[a].append((field == "allow", value))
+    return out
+
+
+def _group_values(text: str, field_name: str) -> dict:
+    """agent -> [values] of one directive, read within user-agent groups."""
+    found: dict = {}
+    agents: list = []
+    expect = True
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or ":" not in line:
+            continue
+        field, _, value = line.partition(":")
+        field, value = field.strip().lower(), value.strip()
+        if field == "user-agent":
+            if not expect:
+                agents, expect = [], True
+            agents.append(value.lower())
+        elif agents:
+            expect = False
+            if field == field_name:
+                for a in agents:
+                    found.setdefault(a, []).append(value)
+    return found
+
+
+def content_signals(text: str, agent: str) -> dict:
+    """The Content-Signal preferences a robots.txt states for `agent` (its own group, else
+    "*"): {"search": "yes", "ai-train": "no", "ai-input": "no"}, or {} for none.
+
+    Content signals (contentsignals.org) say what a site's content may be used for once
+    fetched. "ai-input=no" asks that it not be fed to an AI model as input, which is what
+    a job search that has an AI read the postings would do with it."""
+    found = _group_values(text, "content-signal")
+    values = found.get(agent.lower()) or found.get("*") or []
+    out: dict = {}
+    for value in values:
+        for pair in value.split(","):
+            k, _, v = pair.partition("=")
+            if k.strip() and v.strip():
+                out[k.strip().lower()] = v.strip().lower()
     return out
 
 

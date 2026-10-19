@@ -1,6 +1,6 @@
 # Contributing to openroles
 
-Thanks for helping. openroles is small on purpose: four readers, one shape, no
+Thanks for helping. openroles is small on purpose: one reader per system, one shape, no
 dependencies. Contributions that keep it that way are very welcome.
 
 ## Set up
@@ -33,14 +33,18 @@ the `web` fixture in `tests/conftest.py`.
 
 The most useful contribution. A new reader is welcome when the system publishes an
 employer's open roles at an endpoint that is either documented as public or allowed by
-its robots.txt. Wanted, if their boards permit it: Workable, Recruitee, Personio,
-Teamtailor, BambooHR, JazzHR, Breezy.
+its robots.txt, and its terms do not forbid it. The README's "Not supported" table says
+why each system there was left out; a check that changes one of those answers is as
+welcome as a reader.
 
-1. Add `src/openroles/providers/<ats>.py` with `fetch(token) -> list[Job]` and
-   `exists(token) -> bool`, and check robots.txt first unless the endpoint is documented
-   as a public API.
-2. Register it in `providers/__init__.py`, `models.ATS`, and `discover.py` (its board URL
-   pattern, so `detect` finds it).
+1. Add `src/openroles/providers/<ats>.py` with `fetch(token) -> list[Job]`,
+   `exists(token) -> bool` and `hosts(token) -> list[str]` (every host a read calls). Quote the vendor's own words for the endpoint in its
+   docstring. Check robots.txt first: `_http.robots_refuses` (an explicit Disallow stops
+   it) where the endpoint is documented as public, `_http.robots_allows` (it must be
+   readable and allow) everywhere else.
+2. Register it in `providers/__init__.py`, `models.ATS` and `models.NAMES`, and
+   `discover.py` (its board URL pattern, so `detect` finds it, and `GUESSED` if a board
+   can be found from a company name).
 3. Add an invented fixture and tests: the fields, an unknown board, robots.txt saying no.
 4. Add a row to the README's "Supported systems" table and a line to `CHANGELOG.md`.
 
@@ -52,9 +56,12 @@ against a real board, without pasting that board's data.
 
 ## Releases
 
-Maintainers bump `__version__` in `src/openroles/__init__.py`, add the `CHANGELOG.md`
-entry, and publish a GitHub release. The release workflow builds the package and
-publishes it to PyPI.
+Maintainers bump `__version__` in `src/openroles/__init__.py` and both versions in
+`server.json`, turn the CHANGELOG's `Unreleased` heading into `## X.Y.Z (date)`, merge,
+and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`. The publish workflow checks
+the tag against all three, builds the package, publishes it to PyPI, creates the GitHub
+release from the CHANGELOG entry and lists the server in the MCP Registry. A tag that
+disagrees with the package publishes nothing.
 
 ## Conduct
 

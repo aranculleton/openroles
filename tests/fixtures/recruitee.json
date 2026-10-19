@@ -1,0 +1,14 @@
+{"offers": [
+  {"id": 501, "title": "Logistics Analyst", "status": "published",
+   "careers_url": "https://acme.recruitee.com/o/logistics-analyst",
+   "locations": [{"city": "Leeds", "state": "England", "country": "United Kingdom", "name": "Leeds office"},
+                 {"city": "", "country": "United Kingdom", "name": "Remote UK"}],
+   "remote": false, "hybrid": true, "on_site": false,
+   "department": "Operations", "employment_type_code": "fulltime_permanent",
+   "published_at": "2026-10-05 08:00:00 UTC", "created_at": "2026-09-20 08:00:00 UTC",
+   "close_at": "2026-11-30 23:59:00 UTC",
+   "description": "<p>Route planning in SQL.</p>", "requirements": "<ul><li>Python</li></ul>",
+   "salary": {"min": "40000", "max": "48000", "period": "year", "currency": "GBP"}},
+  {"id": 502, "title": "Draft Role", "status": "draft",
+   "careers_url": "https://acme.recruitee.com/o/draft-role", "locations": []}
+]}

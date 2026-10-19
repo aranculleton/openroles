@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workzag-jobs>
+  <position>
+    <id>4101</id>
+    <office>Leeds</office>
+    <department>Analytics</department>
+    <recruitingCategory>Data</recruitingCategory>
+    <name>Demand Planner</name>
+    <jobDescriptions>
+      <jobDescription>
+        <name>The role</name>
+        <value><![CDATA[<p>Plan weekly demand.</p><ul><li>SQL</li></ul>]]></value>
+      </jobDescription>
+      <jobDescription>
+        <name>About you</name>
+        <value><![CDATA[<p>Two years in planning.</p>]]></value>
+      </jobDescription>
+    </jobDescriptions>
+    <employmentType>permanent</employmentType>
+    <seniority>experienced</seniority>
+    <schedule>full-time</schedule>
+    <createdAt>2026-09-28T10:14:07+0200</createdAt>
+  </position>
+  <position>
+    <id>4102</id>
+    <office>Remote (UK)</office>
+    <department>Engineering</department>
+    <name>Data Engineer</name>
+    <employmentType>freelance</employmentType>
+    <createdAt>2026-10-01T08:00:00+0200</createdAt>
+  </position>
+</workzag-jobs>

@@ -2,18 +2,18 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.aranculleton/openroles",
   "title": "openroles",
-  "description": "Open roles from any employer's Greenhouse, Lever, Ashby or Workday board. No API key.",
+  "description": "Open roles from employers' own job boards: Greenhouse, Lever, Ashby, Workday and 12 more.",
   "repository": {
     "url": "https://github.com/aranculleton/openroles",
     "source": "github"
   },
-  "version": "0.1.2",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "openroles",
-      "version": "0.1.2",
+      "version": "0.2.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

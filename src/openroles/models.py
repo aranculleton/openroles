@@ -138,6 +138,11 @@ def clean(value) -> str:
 
 
 _DAY = re.compile(r"\s*([0-9]{4})-([0-9]{2})-([0-9]{2})(?![0-9])")
+# A date before any of these systems existed, or further ahead than any posting runs, is a
+# board's blank written as a date: .NET's DateTime.MinValue (0001-01-01), 1900-01-01, the
+# Unix epoch (1970-01-01), 9999-12-31 for "no closing date".
+FIRST_YEAR = 1990
+YEARS_AHEAD = 2
 
 
 def iso_day(*values) -> str:
@@ -146,15 +151,20 @@ def iso_day(*values) -> str:
     Every reader's `posted` and `deadline` comes through here. Cut to ten characters
     instead, a board's odd value ("1/9/2026", "Invalid date", "2026-02-30") came out as
     text that `since_days` compared and the newest-first sort ordered as if it were a
-    date, so a role could be dropped as old for a date nobody gave it."""
+    date, so a role could be dropped as old for a date nobody gave it. A placeholder
+    (a year before FIRST_YEAR, or more than YEARS_AHEAD years from today) is no date
+    either, so the next value is tried."""
+    latest = _dt.date.today() + _dt.timedelta(days=366 * YEARS_AHEAD)
     for value in values:
         m = _DAY.match(str(value or ""))
         if not m:
             continue
         try:
-            return _dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3))).isoformat()
+            day = _dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
         except ValueError:
             continue
+        if FIRST_YEAR <= day.year and day <= latest:
+            return day.isoformat()
     return ""
 
 

@@ -27,7 +27,7 @@ from typing import Callable, Iterable, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, pay, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, iso_day, pay, workplace_of
 from ._xml import parse
 
 LIMIT = 40              # job pages read in one call
@@ -55,7 +55,7 @@ def _date(value) -> str:
     v = clean(value)
     for fmt, n in (("%Y-%m-%d", 10), ("%d-%b-%Y", 11)):
         try:
-            return dt.datetime.strptime(v[:n], fmt).date().isoformat()
+            return iso_day(dt.datetime.strptime(v[:n], fmt).date().isoformat())
         except ValueError:
             continue
     return ""

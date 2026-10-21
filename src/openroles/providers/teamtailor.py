@@ -13,7 +13,7 @@ from typing import List, Optional
 from urllib.parse import urlsplit
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, failed, html_to_text, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, failed, html_to_text, iso_day, workplace_of
 from ._xml import parse, text_of
 
 NS = "{https://teamtailor.com/locations}"
@@ -34,7 +34,7 @@ def host_of(token: str) -> str:
 
 def _date(value: str) -> str:
     try:
-        return email.utils.parsedate_to_datetime(value).date().isoformat()
+        return iso_day(email.utils.parsedate_to_datetime(value).date().isoformat())
     except (TypeError, ValueError, IndexError):
         return ""
 

@@ -12,16 +12,16 @@ from typing import List, Optional, Tuple
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, pay, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, iso_day, pay, workplace_of
 
 HOSTS = ("https://api.lever.co", "https://api.eu.lever.co")
 PATH = "/v0/postings/{token}?mode=json"
 
 
 def _epoch_ms_date(ms) -> str:
-    """Lever's createdAt (milliseconds since 1970) as YYYY-MM-DD, or ""."""
+    """Lever's createdAt (milliseconds since 1970) as YYYY-MM-DD, or "" (0 among them)."""
     try:
-        return dt.datetime.fromtimestamp(int(ms) / 1000, dt.timezone.utc).date().isoformat()
+        return iso_day(dt.datetime.fromtimestamp(int(ms) / 1000, dt.timezone.utc).date().isoformat())
     except (TypeError, ValueError, OverflowError, OSError):
         return ""
 

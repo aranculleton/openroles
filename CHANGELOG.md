@@ -63,6 +63,10 @@
   UUIDs come out in lower case as their boards give them; a protocol-relative link and a
   lower-case Rippling locale are read; and an address whose `gh_jid` disagrees with the
   posting number in its path gives "" rather than either.
+- **A placeholder written as a date is no date.** A year before 1990 (.NET's
+  `0001-01-01`, `1900-01-01`, the Unix epoch, Lever's `createdAt` of 0) or more than two
+  years ahead (`9999-12-31`) reads as empty, so the role is kept by `since_days` and
+  ClearCompany falls back to `openDate`.
 - **`posted` and `deadline` are always a real `YYYY-MM-DD`, or empty.** Every reader cut
   the board's value to ten characters, so a date written another way ("1/9/2026") came out
   as text that `since_days` compared as older than any real date, and the role was dropped

@@ -87,7 +87,7 @@ def test_a_board_read_twice_costs_the_host_a_304(monkeypatch):
     class Answer(io.BytesIO):
         def __init__(self, body, etag):
             super().__init__(body)
-            self.headers = {"ETag": etag}
+            self.headers = {"ETag": etag, "Content-Length": str(len(body))}
 
         def __enter__(self):
             return self

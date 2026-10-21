@@ -36,6 +36,39 @@ def test_the_first_readable_value_wins():
     assert iso_day("", None) == ""
 
 
+@pytest.mark.parametrize("value", [
+    "0001-01-01T00:00:00",                             # .NET's DateTime.MinValue
+    "1900-01-01", "1970-01-01T00:00:00Z", "1989-12-31", "9999-12-31",
+])
+def test_a_placeholder_written_as_a_date_is_no_date(value):
+    """Read as real, it dropped the role from since_days, sorted it last and blocked the
+    fallback a missing date gets."""
+    from openroles.models import iso_day
+    assert iso_day(value) == ""
+    assert iso_day(value, "2026-10-01T00:00:00") == "2026-10-01"
+
+
+def test_a_real_date_near_either_edge_is_kept():
+    from openroles.models import iso_day
+    assert iso_day("1990-01-01") == "1990-01-01"
+    ahead = dt.date.today() + dt.timedelta(days=365)
+    assert iso_day(ahead.isoformat()) == ahead.isoformat()        # a closing date next year
+    assert iso_day((dt.date.today() + dt.timedelta(days=3 * 366)).isoformat()) == ""
+
+
+def test_a_placeholder_date_falls_back_to_the_next_one_a_board_gives(web):
+    from openroles.providers import clearcompany, lever
+    site = "0b9c1f7e-2222-4c2b-9f00-000000000301"
+    web.routes[f"careers-api.clearcompany.com/v1/{site}"] = {"results": [{
+        "id": 55, "positionTitle": "Recruiter", "applyLink": "https://jobs.clearcompany.com/careers/jobs/55",
+        "postedDate": "0001-01-01T00:00:00", "openDate": "2026-10-01T00:00:00"}]}
+    assert clearcompany.fetch(site)[0].posted == "2026-10-01"
+    data = fixture("lever.json")
+    data[0]["createdAt"] = 0                           # the epoch: Lever's blank
+    web.routes["api.lever.co/v0/postings/acme"] = data
+    assert lever.fetch("acme")[0].posted == ""
+
+
 def test_a_date_a_board_wrote_its_own_way_is_no_date_and_the_role_is_kept(web):
     data = fixture("greenhouse.json")
     data["jobs"][0]["first_published"] = "1/9/2026"

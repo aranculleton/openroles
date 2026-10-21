@@ -27,7 +27,7 @@ from typing import Callable, Iterable, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, pay, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, iso_day, pay, workplace_of
 from ._xml import parse
 
 LIMIT = 40              # job pages read in one call
@@ -35,10 +35,12 @@ MAX_SITEMAPS = 20       # sitemap files followed from an index
 # What a job page's address looks like on the systems this has been checked against:
 # /job/..., /jobs/123, /careers/job/..., /JobDetail/...
 JOB_PATH = re.compile(r"/(?:jobs?|jobdetail|vacanc(?:y|ies)|positions?|openings?)(?:/|-|$)", re.I)
-# The type may be quoted or not: HTML allows type=application/ld+json, and minified pages
-# write it that way.
-_LD = re.compile(r"<script\b[^>]*?\btype\s*=\s*[\"']?application/ld\+json\b[\"']?[^>]*>(.*?)</script>",
-                 re.I | re.S)
+# A JSON-LD script: its opening tag, the type in that tag, and the tag that closes it. The
+# type may be quoted or not: HTML allows type=application/ld+json, and minified pages write
+# it that way.
+_SCRIPT = re.compile(r"<script\b", re.I)
+_LD_TYPE = re.compile(r"\btype\s*=\s*[\"']?application/ld\+json\b", re.I)
+_SCRIPT_END = re.compile(r"</script>", re.I)
 # Lines some pages wrap a script in to hide it from older parsers: comment and CDATA markers.
 _FRAMING = re.compile(r"//|/\*|\*/|<!--|--!?>|<!\[CDATA\[|\]\]>|\s+")
 
@@ -55,7 +57,7 @@ def _date(value) -> str:
     v = clean(value)
     for fmt, n in (("%Y-%m-%d", 10), ("%d-%b-%Y", 11)):
         try:
-            return dt.datetime.strptime(v[:n], fmt).date().isoformat()
+            return iso_day(dt.datetime.strptime(v[:n], fmt).date().isoformat())
         except ValueError:
             continue
     return ""
@@ -141,13 +143,18 @@ def _lower(obj):
 
 
 def _unframed(text: str) -> str:
-    """The script without the comment or CDATA lines at either end."""
+    """The script without the comment or CDATA lines at either end.
+
+    In one pass from each end and one slice: dropping lines one at a time from the front
+    of a list moved every line after them each time, and a script that opened with a few
+    hundred thousand comment lines held a read for minutes."""
     lines = text.split("\n")
-    while lines and not _FRAMING.sub("", lines[0]):
-        lines.pop(0)
-    while lines and not _FRAMING.sub("", lines[-1]):
-        lines.pop()
-    return "\n".join(lines)
+    first, last = 0, len(lines)
+    while first < last and not _FRAMING.sub("", lines[first]):
+        first += 1
+    while last > first and not _FRAMING.sub("", lines[last - 1]):
+        last -= 1
+    return "\n".join(lines[first:last])
 
 
 def _leading(text: str) -> list:
@@ -162,7 +169,7 @@ def _leading(text: str) -> list:
             return out
         try:
             value, i = decoder.raw_decode(text, i)
-        except ValueError:
+        except (ValueError, RecursionError):        # nested deeper than Python can follow
             return out
         out.append(value)
 
@@ -174,24 +181,58 @@ def json_values(block: str) -> list:
     raw newline inside a JSON string, which strict JSON refuses, so the page read as
     having no JobPosting. Also read: a script wrapped in comment or CDATA lines, one
     HTML-entity-encoded as a whole, and junk after a complete value. Nothing is guessed
-    beyond that; a script still unreadable gives nothing. The cases are the ones
-    extruct's JSON-LD reader handles (scrapinghub/extruct, BSD-3-Clause), written afresh.
+    beyond that: a JavaScript comment with words in it, a trailing comma, or a broken
+    escape or quote is not mended, and a script still unreadable gives nothing.
     """
     text = block.strip()
-    for attempt in (text, _unframed(text)):
-        found = _leading(attempt)
-        if found:
-            return found
-    unescaped = _html.unescape(_unframed(text))
-    return _leading(unescaped) if unescaped != _unframed(text) else []
+    found = _leading(text)
+    if found:
+        return found
+    unframed = _unframed(text)
+    found = _leading(unframed)
+    if found:
+        return found
+    unescaped = _html.unescape(unframed)
+    return _leading(unescaped) if unescaped != unframed else []
+
+
+def _ld_scripts(html: str) -> List[str]:
+    """The text inside every JSON-LD script on a page, in order.
+
+    In one pass. A single regular expression for the whole script looked to the end of
+    the page for a closing tag after every opening one that had none, and for a ">" after
+    every "<script" that had none, so a hostile page of 5 MB could hold one read for hours.
+    Here each is looked for once: when none follows, no later script can be complete
+    either. What it finds is what that expression found."""
+    out, i = [], 0
+    while True:
+        opening = _SCRIPT.search(html, i)
+        if not opening:
+            return out
+        end = html.find(">", opening.end())
+        if end < 0:
+            return out
+        if not _LD_TYPE.search(html, opening.end(), end):
+            # Every "<script" before this ">" ends its tag here too, and none of them can
+            # hold a type this whole stretch does not.
+            i = end + 1
+            continue
+        closing = _SCRIPT_END.search(html, end + 1)
+        if not closing:
+            return out
+        out.append(html[end + 1:closing.start()])
+        i = closing.end()
 
 
 def postings(html: str) -> List[dict]:
     """Every schema.org JobPosting in a page's JSON-LD, keys lower-cased (some sites write
     "DatePosted")."""
     out = []
-    for block in _LD.findall(html or ""):
-        stack = [_lower(data) for data in json_values(block)]
+    for block in _ld_scripts(html or ""):
+        try:
+            stack = [_lower(data) for data in json_values(block)]
+        except RecursionError:      # JSON nested deeper than this can follow: as unreadable
+            continue
         while stack:
             node = stack.pop()
             if isinstance(node, list):
@@ -243,10 +284,10 @@ def _pay(p: dict) -> str:
     def num(x):
         try:
             return f"{float(x):,.0f}"
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return clean(x)
     span = "-".join(num(x) for x in (lo, hi) if x is not None)
-    return clean(f"{s.get('currency') or p.get('salarycurrency') or ''} {span} "
+    return clean(f"{clean(s.get('currency')) or clean(p.get('salarycurrency'))} {span} "
                  f"{clean(v.get('unittext')).lower()}")
 
 
@@ -260,7 +301,7 @@ def _salary(p: dict) -> dict:
     lo, hi = v.get("minvalue"), v.get("maxvalue")
     if lo is None and hi is None:
         lo = hi = v.get("value")
-    return pay(lo, hi, s.get("currency") or p.get("salarycurrency"), v.get("unittext"))
+    return pay(lo, hi, clean(s.get("currency")) or p.get("salarycurrency"), v.get("unittext"))
 
 
 def _job(token: str, page: str, p: dict) -> Optional[Job]:
@@ -286,7 +327,7 @@ def _job(token: str, page: str, p: dict) -> Optional[Job]:
         compensation=_pay(p),
         **_salary(p),
         deadline=_date(p.get("validthrough")),
-        description=html_to_text(str(p.get("description") or "")) or None,
+        description=html_to_text(p.get("description")) or None,
         workplace="remote" if remote else workplace_of(*places),
     )
 

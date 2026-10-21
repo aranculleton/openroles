@@ -12,7 +12,7 @@ from typing import Callable, List, Optional, Union
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, as_str, clean, failed, html_to_text, ident, iso_day, workplace_of
 
 HOST = "api.polymer.co"
 BASE = "https://api.polymer.co/v1/hire/organizations/{slug}/jobs"
@@ -52,14 +52,14 @@ def exists(token: str) -> bool:
 def fetch(token: str, details: Details = False, report: Optional[dict] = None) -> List[Job]:
     out = []
     for i in _items(token):
-        title, url = clean(i.get("title")), i.get("job_post_url") or ""
-        if not title or not url:
+        number, title, url = ident(i.get("id")), clean(i.get("title")), as_str(i.get("job_post_url"))
+        if not number or not title or not url:
             continue
         place = ", ".join(x for x in (clean(i.get("city")), clean(i.get("state_region")),
                                       clean(i.get("country"))) if x) or clean(i.get("display_location"))
         workplace = workplace_of(i.get("remoteness_pretty"))
         out.append(Job(
-            id=f"pm-{i.get('id')}",
+            id=f"pm-{number}",
             ats="polymer",
             board=token,
             title=title,
@@ -81,7 +81,7 @@ def fetch(token: str, details: Details = False, report: Optional[dict] = None) -
             errors[job.id] = err or "a job record that was not a job"
             continue
         rec = detail.get("item") if isinstance(detail.get("item"), dict) else detail
-        job.description = html_to_text(str(rec.get("description") or "")) or None
+        job.description = html_to_text(rec.get("description")) or None
         job.department = clean(rec.get("department")) or job.department
     if report is not None:
         report.update(listing_errors=[], detail_errors=errors, details_asked=len(want))

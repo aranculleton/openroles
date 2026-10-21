@@ -82,7 +82,10 @@ openroles.job_id("https://www.acme.example/careers/?gh_jid=4012345")
 `job_id` is for matching one posting found in two places, read from the employer's board
 and linked from a job site. It reads Greenhouse (any page with `gh_jid` too), Lever,
 Ashby, Rippling, Workable, Personio and Workday addresses, fetches nothing, and gives ""
-for an address that does not carry the system's own posting id.
+for an address that does not carry the system's own posting id. One Workday case is
+ambiguous: a listing that sends its path already percent-encoded ("M%C3%BCnchen") gives
+the same address as one that sends it plain ("München"), and `job_id` reads it as the
+plain one.
 
 `fetch()` raises `openroles.BoardError` when a board cannot be read (a wrong token, no
 answer), and `openroles.RobotsDisallowed` when the host's robots.txt says no.
@@ -101,10 +104,22 @@ openroles.configure(
 ```
 
 With `cache_dir`, each board's last answer is kept with the `ETag` or `Last-Modified` date
-the board sent, and the next run asks with them: a board that has not changed answers
-`304 Not Modified` and sends nothing, and the kept copy is read instead. Every read still
-asks the board. It is off by default; only GET answers are kept, never one marked
-`no-store`, in owner-only files, at most 500 MB and for 30 days unused.
+the board sent, and the next run asks with them: a board that honours them and has not
+changed answers `304 Not Modified` and sends nothing, and the kept copy is read instead.
+An answer that came with a `Last-Modified` date and no `ETag` is asked about that way for
+at most a day (`MODIFIED_MAX_AGE` in `openroles._http`, 24 hours) after it was last read
+in full, and then read in full once, so a host whose date does not move when its data
+does holds a board back a day at most; the same holds within one run, with or without a
+folder. Every read still asks the board. It is off by default. An answer is kept only when it is
+a GET, is not marked `no-store`, and shows that all of it arrived: all of its
+`Content-Length`, every chunk of a chunked answer, or a gzip stream to its end. One that
+gives no length and is neither chunked nor gzipped ends when the connection closes, cut
+short or not, so it is read in full every time. Kept answers are in owner-only files, for
+30 days unused, and about 500 MB of them: each process keeps the folder to that, so two
+processes writing to one folder at once (a long-running application and a command-line
+run, say) can take it past that until one of them next looks at the whole folder: when it
+starts using it, at least once an hour while it does, and whenever what it has written
+itself passes the cap.
 
 Everything a search decides for itself stays a parameter: `query`, `location`, `remote`,
 `since_days`, `country`, and `details`, which can be a function that says which postings
@@ -155,7 +170,7 @@ Every role, from every system, has the same fields:
 | `posted` | `YYYY-MM-DD`, first published (not last edited) where the system says; see below |
 | `department`, `employment_type` | where the board provides them |
 | `compensation` | the posted pay band, where the employer publishes one, as the board words it |
-| `salary_min`, `salary_max`, `salary_currency`, `salary_period` | the same band as numbers, its ISO currency code and `hour`, `day`, `week`, `month` or `year`, only where the board publishes them as numbers (Lever, Ashby, Recruitee, Rippling, ClearCompany, careers sites); never read out of a description |
+| `salary_min`, `salary_max`, `salary_currency`, `salary_period` | the same band as numbers, its ISO currency code and `hour`, `day`, `week`, `month`, `year` or `""` (a period such as every two weeks), only where the board publishes them as numbers (Lever, Ashby, Recruitee, Rippling, ClearCompany, careers sites); never read out of a description |
 | `deadline` | where the board provides one |
 | `description` | plain text, HTML removed |
 

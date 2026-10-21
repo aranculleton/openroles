@@ -13,7 +13,7 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, as_list, as_str, clean, failed, html_to_text, ident, iso_day, workplace_of
 
 HOST = "api.gem.com"
 URL = "https://api.gem.com/job_board/v0/{path}/job_posts/"
@@ -41,18 +41,18 @@ def exists(token: str) -> bool:
 def fetch(token: str) -> List[Job]:
     out = []
     for p in _posts(token):
-        title, url = clean(p.get("title")), p.get("absolute_url") or ""
-        if not title or not url:
+        number, title, url = ident(p.get("id")), clean(p.get("title")), as_str(p.get("absolute_url"))
+        if not number or not title or not url:
             continue
         loc = p.get("location")
         primary = clean(loc.get("name")) if isinstance(loc, dict) else clean(loc)
-        offices = [clean(o.get("location") or o.get("name")) for o in p.get("offices") or []
+        offices = [clean(o.get("location") or o.get("name")) for o in as_list(p.get("offices"))
                    if isinstance(o, dict)]
         places = list(dict.fromkeys(x for x in [primary, *offices] if x))
         workplace = workplace_of(p.get("location_type"))
-        depts = [clean(d.get("name")) for d in p.get("departments") or [] if isinstance(d, dict)]
+        depts = [clean(d.get("name")) for d in as_list(p.get("departments")) if isinstance(d, dict)]
         out.append(Job(
-            id=f"gm-{p.get('id')}",
+            id=f"gm-{number}",
             ats="gem",
             board=token,
             title=title,
@@ -63,8 +63,8 @@ def fetch(token: str) -> List[Job]:
             posted=iso_day(p.get("first_published_at"), p.get("created_at")),
             department=next((d for d in depts if d), ""),
             employment_type=clean(p.get("employment_type")).replace("_", " "),
-            description=(str(p.get("content_plain") or "").strip()
-                         or html_to_text(str(p.get("content") or ""))) or None,
+            description=(as_str(p.get("content_plain")).strip()
+                         or html_to_text(p.get("content"))) or None,
             workplace=workplace,
         ))
     return out

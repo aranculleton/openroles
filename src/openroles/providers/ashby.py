@@ -8,7 +8,21 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, amount, clean, html_to_text, iso_day, pay, period_of, workplace_of
+from ..models import (
+    BoardError,
+    Job,
+    RobotsDisallowed,
+    amount,
+    as_str,
+    clean,
+    html_to_text,
+    ident,
+    iso_day,
+    pay,
+    period_of,
+    span,
+    workplace_of,
+)
 
 HOST = "api.ashbyhq.com"
 URL = "https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true"
@@ -52,6 +66,12 @@ def _pay(job: dict) -> str:
     return ""
 
 
+def _list(value) -> list:
+    """A field Ashby documents as a list, or nothing: one odd posting is not a reason to
+    lose the board."""
+    return value if isinstance(value, list) else []
+
+
 def _salaries(components) -> list:
     """The salary components with a figure: equity and bonus are not salary."""
     return [c for c in components if isinstance(c, dict)
@@ -62,16 +82,19 @@ def _salaries(components) -> list:
 def _salary(job: dict) -> dict:
     """The salary band from Ashby's structured compensation: its summary where that has
     one, else every tier's. Tiers in different currencies or periods are not one band, so
-    they give none, and `compensation` still words them."""
+    they give none, and `compensation` still words them. Two intervals no period field can
+    hold ("2 WEEK", "0.5 MONTH") are still two periods."""
     comp = job.get("compensation") if isinstance(job.get("compensation"), dict) else {}
-    tiers = [t for t in comp.get("compensationTiers") or [] if isinstance(t, dict)]
-    parts = (_salaries(comp.get("summaryComponents") or [])
-             or _salaries(c for t in tiers for c in t.get("components") or []))
-    kinds = {(clean(c.get("currencyCode")).upper(), period_of(c.get("interval"))) for c in parts}
+    tiers = [t for t in _list(comp.get("compensationTiers")) if isinstance(t, dict)]
+    parts = (_salaries(_list(comp.get("summaryComponents")))
+             or _salaries(c for t in tiers for c in _list(t.get("components"))))
+    kinds = {(clean(c.get("currencyCode")).upper(),
+              period_of(c.get("interval")) or clean(c.get("interval")).lower()) for c in parts}
     if len(kinds) != 1:
         return pay()
-    lows = [x for x in (amount(c.get("minValue")) for c in parts) if x is not None]
-    highs = [x for x in (amount(c.get("maxValue")) for c in parts) if x is not None]
+    spans = [span(c.get("minValue"), c.get("maxValue")) for c in parts]     # each in order first
+    lows = [lo for lo, _ in spans if lo is not None]
+    highs = [hi for _, hi in spans if hi is not None]
     return pay(min(lows) if lows else None, max(highs) if highs else None,
                parts[0].get("currencyCode"), parts[0].get("interval"))
 
@@ -98,8 +121,11 @@ def rows(token: str, data: object) -> List[Job]:
     for j in data["jobs"]:
         if not isinstance(j, dict) or j.get("isListed") is False:
             continue
+        number, title = ident(j.get("id")), clean(j.get("title"))
+        if not number or not title:
+            continue
         home = clean(_address(j).get("addressCountry"))
-        labels = [label(j)] + [label(s, home) for s in j.get("secondaryLocations") or []
+        labels = [label(j)] + [label(s, home) for s in _list(j.get("secondaryLocations"))
                                if isinstance(s, dict)]
         labels = list(dict.fromkeys(x for x in labels if x))
         # workplaceType is Ashby's current field; isRemote is the older flag, and only
@@ -110,11 +136,11 @@ def rows(token: str, data: object) -> List[Job]:
         else:
             remote = True if j.get("isRemote") is True else None
         out.append(Job(
-            id=f"ab-{j.get('id')}",
+            id=f"ab-{number}",
             ats="ashby",
             board=token,
-            title=clean(j.get("title")),
-            url=j.get("jobUrl") or "",
+            title=title,
+            url=as_str(j.get("jobUrl")),
             location="; ".join(labels),
             locations=labels,
             remote=remote,
@@ -126,14 +152,14 @@ def rows(token: str, data: object) -> List[Job]:
             compensation=_pay(j),
             **_salary(j),
             description=(clean_block(j.get("descriptionPlain"))
-                         or html_to_text(str(j.get("descriptionHtml") or "")) or None),
+                         or html_to_text(j.get("descriptionHtml")) or None),
             workplace=workplace_of(workplace) or ("remote" if remote else ""),
         ))
     return out
 
 
 def clean_block(text) -> str:
-    return str(text or "").strip()
+    return as_str(text).strip()
 
 
 def fetch(token: str) -> List[Job]:

@@ -14,7 +14,21 @@ from typing import Callable, List, Optional, Union
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, pay, workplace_of
+from ..models import (
+    BoardError,
+    Job,
+    RobotsDisallowed,
+    as_dict,
+    as_list,
+    as_str,
+    clean,
+    failed,
+    html_to_text,
+    ident,
+    iso_day,
+    pay,
+    workplace_of,
+)
 
 HOST = "api.rippling.com"
 BASE = "https://api.rippling.com/platform/api/ats/v2/board/{slug}"
@@ -60,22 +74,34 @@ def _place(loc: dict) -> str:
     return ", ".join(x for x in parts if x) or clean(loc.get("name"))
 
 
-def _pay(detail: dict) -> str:
-    for r in detail.get("payRangeDetails") or []:
+def _range(detail: dict) -> dict:
+    """The posting's first pay range that gives a figure, or {}. The field is a list;
+    anything else (a number, true) is no range, never a reason to lose the board."""
+    ranges = detail.get("payRangeDetails")
+    for r in ranges if isinstance(ranges, list) else []:
         if isinstance(r, dict) and (r.get("rangeStart") is not None or r.get("rangeEnd") is not None):
-            def num(v):
-                return f"{v:,.0f}" if isinstance(v, (int, float)) else clean(v)
-            span = "-".join(num(v) for v in (r.get("rangeStart"), r.get("rangeEnd")) if v is not None)
-            return clean(f"{r.get('currency') or ''} {span} {clean(r.get('frequency')).lower().replace('_', ' ')}")
-    return ""
+            return r
+    return {}
+
+
+def _pay(detail: dict) -> str:
+    r = _range(detail)
+    if not r:
+        return ""
+
+    def num(v):
+        try:
+            return f"{v:,.0f}" if isinstance(v, (int, float)) else clean(v)
+        except OverflowError:
+            return clean(v)
+    span = "-".join(num(v) for v in (r.get("rangeStart"), r.get("rangeEnd")) if v is not None)
+    return clean(f"{clean(r.get('currency'))} {span} {clean(r.get('frequency')).lower().replace('_', ' ')}")
 
 
 def _salary(detail: dict) -> dict:
     """The same range `_pay` words: the first with a figure."""
-    for r in detail.get("payRangeDetails") or []:
-        if isinstance(r, dict) and (r.get("rangeStart") is not None or r.get("rangeEnd") is not None):
-            return pay(r.get("rangeStart"), r.get("rangeEnd"), r.get("currency"), r.get("frequency"))
-    return pay()
+    r = _range(detail)
+    return pay(r.get("rangeStart"), r.get("rangeEnd"), r.get("currency"), r.get("frequency")) if r else pay()
 
 
 def fetch(token: str, details: Details = False, report: Optional[dict] = None) -> List[Job]:
@@ -83,16 +109,16 @@ def fetch(token: str, details: Details = False, report: Optional[dict] = None) -
     Job) decides whose own record is fetched for its description, date and pay."""
     out = []
     for i in _items(token):
-        title, url = clean(i.get("name")), i.get("url") or ""
-        if not title or not url:
+        number, title, url = ident(i.get("id")), clean(i.get("name")), as_str(i.get("url"))
+        if not number or not title or not url:
             continue
-        locs = [loc for loc in i.get("locations") or [] if isinstance(loc, dict)]
+        locs = [loc for loc in as_list(i.get("locations")) if isinstance(loc, dict)]
         places = list(dict.fromkeys(p for p in (_place(loc) for loc in locs) if p))
         kinds = {workplace_of(loc.get("workplaceType")) for loc in locs}
         workplace = kinds.pop() if len(kinds) == 1 else ""
         dept = i.get("department")
         out.append(Job(
-            id=f"rp-{i.get('id')}",
+            id=f"rp-{number}",
             ats="rippling",
             board=token,
             title=title,
@@ -110,9 +136,9 @@ def fetch(token: str, details: Details = False, report: Optional[dict] = None) -
         if err or not isinstance(detail, dict):
             failed[job.id] = err or "a posting record that was not a posting"
             continue
-        desc = detail.get("description") if isinstance(detail.get("description"), dict) else {}
-        body = "\n\n".join(x for x in (html_to_text(desc.get("role") or ""),
-                                       html_to_text(desc.get("company") or "")) if x)
+        desc = as_dict(detail.get("description"))
+        body = "\n\n".join(x for x in (html_to_text(desc.get("role")),
+                                       html_to_text(desc.get("company"))) if x)
         kind = detail.get("employmentType")
         job.posted = iso_day(detail.get("createdOn"))
         job.employment_type = clean(kind.get("label")) if isinstance(kind, dict) else clean(kind)

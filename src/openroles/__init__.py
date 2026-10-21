@@ -38,19 +38,28 @@ def configure(user_agent: Optional[str] = None, robots_agents: Optional[Iterable
                       whose robots.txt says "Content-Signal: ai-input=no" is then read.
     cache_dir         a folder to keep each board's last answer in between runs, with the
                       ETag or Last-Modified date the board sent: the next run asks with
-                      them, and a board that has not changed answers 304 and sends nothing.
-                      Every read still asks the board; nothing is served without asking.
-                      Off by default; False turns it off. Only GET answers are kept, never
-                      one the host marks no-store, and at most 500 MB, for 30 days unused.
+                      them, and a board that has not changed answers 304 and sends nothing
+                      (one with only a Last-Modified date for a day after it was last read
+                      in full). Every read still asks the board; nothing is served without
+                      asking.
+                      Off by default; False turns it off. Only GET answers that show they
+                      arrived whole are kept, never one the host marks no-store, for 30
+                      days unused, and about 500 MB of them: each process keeps the folder
+                      to that, so two writing to it at once can take it past until one of
+                      them next looks at the whole folder (at least hourly while in use).
     """
     from . import _http
     if cache_dir is not None:
         if cache_dir is False or cache_dir == "":
             _http.CACHE_DIR = ""
-        elif cache_dir is True:
-            raise ValueError("cache_dir is a folder to keep answers in, or False for none")
         else:
-            _http.CACHE_DIR = _os.path.abspath(_os.path.expanduser(_os.fspath(cache_dir)))
+            # A folder named as bytes would be taken here and then break every read, so
+            # only text and path objects are folders.
+            path = _os.fspath(cache_dir) if isinstance(cache_dir, (str, _os.PathLike)) else None
+            if not isinstance(path, str):
+                raise ValueError("cache_dir is a folder to keep answers in (a str or a "
+                                 "pathlib.Path), or False for none")
+            _http.CACHE_DIR = _os.path.abspath(_os.path.expanduser(path))
     if user_agent is not None:
         if not user_agent.strip():
             raise ValueError("user_agent must name the application sending the requests")

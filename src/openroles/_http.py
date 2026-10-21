@@ -13,6 +13,7 @@ import gzip
 import hashlib
 import http.client
 import json
+import math
 import os
 import tempfile
 import threading
@@ -45,29 +46,62 @@ def _slot(host: str) -> threading.BoundedSemaphore:
         return _SLOTS.setdefault(host.lower(), threading.BoundedSemaphore(PER_HOST))
 
 
-# A GET's last answer, by URL, for hosts that send an ETag or a Last-Modified date: read
-# again, the request carries them and an unchanged answer is a 304 with no body.
+# A GET's last answer, for hosts that send an ETag or a Last-Modified date: read again, the
+# request carries them and an unchanged answer is a 304 with no body. Kept by address and
+# the Accept it was asked with, since one address can answer JSON to one and HTML to
+# another, and a host that only sends Last-Modified would answer 304 to both.
 ETAG_BYTES = 32_000_000
-_ETAGS: OrderedDict = OrderedDict()   # url -> (etag, last modified, body), oldest first
+# (url, accept) -> (etag, last modified, body, when it was last read in full), oldest first
+_ETAGS: OrderedDict = OrderedDict()
 _ETAG_LOCK = threading.Lock()
+Key = Tuple[str, str]
+# An answer kept with a Last-Modified date and no ETag is asked about with If-Modified-Since
+# for this long after it was last read in full (a 304 does not count), then read in full
+# once. A host whose Last-Modified stays put while its data changes answers 304 to every
+# such question, and each 304 counts as recent use, so without a bound its kept copy would
+# be the answer for good. An ETag names the body itself and has no such bound.
+MODIFIED_MAX_AGE = 24 * 3600
+# The wall clock MODIFIED_MAX_AGE is measured on, in seconds since 1970. A name of its own,
+# so a test can move it on a day without waiting one.
+_now = time.time
+# The characters the kept bodies hold, and the store that total is for. A running total:
+# adding every body up again on each insert made a run of n answers cost n squared. A store
+# put in _ETAGS's place (a fresh process in a test) is counted once, the first time.
+_HELD: list = [None, 0]
 
 
-def _remember(url: str, etag: str, body: str, modified: str = "") -> None:
+def _held() -> int:
+    if _HELD[0] is not _ETAGS:
+        _HELD[:] = [_ETAGS, sum(len(entry[2]) for entry in _ETAGS.values())]
+    return _HELD[1]
+
+
+def _remember(key: Key, etag: str, body: str, modified: str = "",
+              fetched: Optional[float] = None) -> None:
+    """Keep an answer in memory. `fetched` is when it was last read in full: now, unless
+    a 304 is sending back one read earlier."""
     with _ETAG_LOCK:
-        _ETAGS.pop(url, None)
-        _ETAGS[url] = (etag, modified, body)
-        size = sum(len(entry[-1]) for entry in _ETAGS.values())
+        size = _held()
+        old = _ETAGS.pop(key, None)
+        if old is not None:
+            size -= len(old[2])
+        _ETAGS[key] = (etag, modified, body, _now() if fetched is None else fetched)
+        size += len(body)
         while _ETAGS and size > ETAG_BYTES:
             _, gone = _ETAGS.popitem(last=False)
-            size -= len(gone[-1])
+            size -= len(gone[2])
+        _HELD[1] = size
 
 
-def _forget(url: str) -> None:
+def _forget(key: Key) -> None:
     with _ETAG_LOCK:
-        _ETAGS.pop(url, None)
+        size = _held()
+        old = _ETAGS.pop(key, None)
+        if old is not None:
+            _HELD[1] = size - len(old[2])
     if CACHE_DIR:
         try:
-            os.remove(_cache_file(url))
+            os.remove(_cache_file(key))
         except OSError:
             pass
 
@@ -86,52 +120,87 @@ def _validators(headers) -> Optional[Tuple[str, str]]:
 
 # Where answers are kept between runs: "" keeps nothing on disk (the default). Set with
 # openroles.configure(cache_dir=...). Each answer is one gzipped file named for a hash of
-# its address, readable by its owner alone; the folder holds at most CACHE_BYTES, and an
-# answer not asked for in CACHE_DAYS goes. It only ever spares a download: every read
-# still asks the host, and a 304 is the host saying nothing changed.
+# its address, readable by its owner alone; the folder holds about CACHE_BYTES (see
+# PRUNE_SECONDS), and an answer not asked for in CACHE_DAYS goes. It only ever spares a
+# download: every read still asks the host, and a 304 is the host saying nothing changed.
 CACHE_DIR = ""
 CACHE_BYTES = 500_000_000
 CACHE_DAYS = 30
-PRUNE_EVERY = 500          # writes between tidies of the folder, after the first
-_WRITES: dict = {}
+# The folder is looked at whole on its first use in a process, read or write, so a run of
+# only 304s still drops what is past CACHE_DAYS; then every PRUNE_SECONDS, for a long-running
+# server; and whenever a running total of what this process wrote takes it past CACHE_BYTES.
+# The total starts from the look, so another process writing to the same folder at the same
+# time is counted at this one's next look: the cap holds for each process, and two writing
+# to one folder at once can take it past the cap until one of them looks again.
+PRUNE_SECONDS = 3600
+# A look that finds the folder over CACHE_BYTES takes it down to this share of it. Taken
+# down only to the cap, the next write passed it again, and every write after that looked
+# at the whole folder (a scan, a stat of every file and a sort) while holding the lock
+# every read waits on.
+PRUNE_TO = 0.9
+# Written into every file. A file without it, or with another, is a miss and is replaced on
+# the next full answer: so a release that changes what a file means, or one that must not
+# trust what an earlier build wrote (before 0.3.0 a body cut short by the network could be
+# kept), says so by raising it.
+CACHE_FORMAT = 1
+_TIDY: dict = {}           # folder -> [bytes it holds as far as this process knows, last look]
 _PRUNE_LOCK = threading.Lock()
 
 
-def _cache_file(url: str) -> str:
-    name = hashlib.sha256(url.encode("utf-8")).hexdigest() + ".json.gz"
+def _this_format(v) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool) and v == CACHE_FORMAT
+
+
+def _cache_file(key: Key) -> str:
+    name = hashlib.sha256(json.dumps(list(key)).encode("utf-8")).hexdigest() + ".json.gz"
     return os.path.join(CACHE_DIR, "http", name)
 
 
-def _disk_get(url: str) -> Optional[Tuple[str, str, str]]:
-    """(etag, last modified, body) kept on disk for `url`, or None. An unreadable or
-    foreign file is a miss, never an error."""
+def _disk_get(key: Key) -> Optional[Tuple[str, str, str, float]]:
+    """(etag, last modified, body, when it was last read in full) kept on disk for (url,
+    accept), or None. An unreadable or foreign file is a miss, never an error; one that
+    does not say when it was read reads as read long ago."""
     if not CACHE_DIR:
         return None
+    _tidy(os.path.join(CACHE_DIR, "http"))
     try:
-        with gzip.open(_cache_file(url), "rt", encoding="utf-8") as fh:
+        with gzip.open(_cache_file(key), "rt", encoding="utf-8") as fh:
             entry = json.load(fh)
-    except (OSError, EOFError, ValueError, zlib.error):
+    except (OSError, EOFError, ValueError, zlib.error, RecursionError):
         return None
-    if not isinstance(entry, dict) or entry.get("url") != url:
+    if not isinstance(entry, dict) or not _this_format(entry.get("v")) or \
+            (entry.get("url"), entry.get("accept")) != key:
         return None
     etag, modified, body = (entry.get(k) for k in ("etag", "last_modified", "body"))
     if not all(isinstance(x, str) for x in (etag, modified, body)) or not (etag or modified):
         return None
-    return etag, modified, body
+    fetched = entry.get("fetched")
+    real = isinstance(fetched, (int, float)) and not isinstance(fetched, bool) and math.isfinite(fetched)
+    return etag, modified, body, float(fetched) if real else 0.0
 
 
-def _disk_put(url: str, etag: str, modified: str, body: str) -> None:
+def _disk_put(key: Key, etag: str, modified: str, body: str,
+              fetched: Optional[float] = None) -> None:
     if not CACHE_DIR:
         return
+    fetched = _now() if fetched is None else fetched
     folder = os.path.join(CACHE_DIR, "http")
+    path = _cache_file(key)
     tmp = ""
     try:
         os.makedirs(folder, mode=0o700, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=folder, suffix=".tmp")      # owner-only
         with os.fdopen(fd, "wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as fh:
-            fh.write(json.dumps({"url": url, "etag": etag, "last_modified": modified,
-                                 "body": body}, ensure_ascii=False).encode("utf-8"))
-        os.replace(tmp, _cache_file(url))
+            fh.write(json.dumps({"v": CACHE_FORMAT, "url": key[0], "accept": key[1],
+                                 "etag": etag, "last_modified": modified, "body": body,
+                                 "fetched": fetched},
+                                ensure_ascii=False).encode("utf-8"))
+        grown = os.path.getsize(tmp)
+        try:
+            grown -= os.path.getsize(path)          # the copy this one replaces
+        except OSError:
+            pass
+        os.replace(tmp, path)
         tmp = ""
     except OSError:
         return                      # a cache that cannot be written is only a slower run
@@ -141,32 +210,43 @@ def _disk_put(url: str, etag: str, modified: str, body: str) -> None:
                 os.remove(tmp)
             except OSError:
                 pass
+    _tidy(folder, grown)
+
+
+def _tidy(folder: str, grown: int = 0) -> None:
+    """Keep the folder to CACHE_BYTES and CACHE_DAYS: see PRUNE_SECONDS for when it is
+    looked at whole. `grown` is what a write just added."""
     with _PRUNE_LOCK:
-        n = _WRITES.get(folder, 0)
-        _WRITES[folder] = n + 1
-    if n % PRUNE_EVERY == 0:
-        prune(folder)
+        now = time.monotonic()
+        known = _TIDY.get(folder)
+        if known is not None:
+            known[0] += grown
+            if known[0] <= CACHE_BYTES and now - known[1] < PRUNE_SECONDS:
+                return
+        _TIDY[folder] = [prune(folder), now]
 
 
-def _touch(url: str, etag: str, modified: str, body: str) -> None:
+def _touch(key: Key, etag: str, modified: str, body: str, fetched: float) -> None:
     """An answer asked for again counts as recent, so pruning keeps what is in use; one
     known only in memory (the folder was named after it was read) is written down."""
     if not CACHE_DIR:
         return
+    _tidy(os.path.join(CACHE_DIR, "http"))
     try:
-        os.utime(_cache_file(url))
+        os.utime(_cache_file(key))
     except OSError:
-        _disk_put(url, etag, modified, body)
+        _disk_put(key, etag, modified, body, fetched)
 
 
-def prune(folder: str, now: Optional[float] = None) -> None:
-    """Answers older than CACHE_DAYS go, then the oldest until the folder is under
-    CACHE_BYTES; a write cut off more than an hour ago goes too."""
+def prune(folder: str, now: Optional[float] = None) -> int:
+    """Answers older than CACHE_DAYS go, and when the folder holds more than CACHE_BYTES,
+    the oldest until it holds PRUNE_TO of it; a write cut off more than an hour ago goes
+    too. The bytes kept."""
     now = time.time() if now is None else now
     try:
         entries = list(os.scandir(folder))
     except OSError:
-        return
+        return 0
     kept = []
     for e in entries:
         try:
@@ -183,14 +263,16 @@ def prune(folder: str, now: Optional[float] = None) -> None:
         elif e.name.endswith(".json.gz"):
             kept.append((st.st_mtime, st.st_size, e.path))
     total = sum(size for _, size, _ in kept)
+    goal = CACHE_BYTES * PRUNE_TO if total > CACHE_BYTES else total
     for _, size, path in sorted(kept):
-        if total <= CACHE_BYTES:
+        if total <= goal:
             break
         try:
             os.remove(path)
             total -= size
         except OSError:
             pass
+    return total
 
 
 def _wait_turn(host: str) -> None:
@@ -207,18 +289,48 @@ def _wait_turn(host: str) -> None:
         time.sleep(start - now)
 
 
+def _all_arrived(fh, got: int) -> Optional[bool]:
+    """Whether the answer's own framing shows every byte arrived: True for a chunked
+    answer or one that got all of its Content-Length, False for one short of it, and None
+    for one that says neither. With a size to read, http.client hands back a short read
+    with no error when the connection drops (its own comment says it does not raise
+    IncompleteRead, for compatibility), so the declared Content-Length is the only sign a
+    body was cut short. A chunked answer that drops raises instead. An answer with neither
+    ends when the connection closes, and one dropped halfway ends the same way."""
+    left = getattr(fh, "length", None)          # what http.client still expected
+    if isinstance(left, int) and left > 0:
+        return False
+    headers = fh.headers
+    if "chunked" in (headers.get("Transfer-Encoding") or "").lower():
+        return True
+    declared = (headers.get("Content-Length") or "").strip()
+    if declared.isascii() and declared.isdigit():
+        return got == int(declared)
+    return None
+
+
 def _read(fh, limit: int) -> Tuple[str, bool]:
     """(the response body as text, unzipped when it came gzipped, at most `limit` bytes;
-    whether that is all of it). A body cut at the limit is never kept for next time."""
+    whether that is provably all of it). Only a body shown to be whole is ever kept for
+    next time: not one cut at the limit, not one short of its Content-Length, not a gzip
+    stream that stops before its end, and not a plain body that gives no length and is
+    not chunked, since nothing shows whether all of it came."""
     raw = fh.read(limit)
-    whole = len(raw) < limit
+    arrived = _all_arrived(fh, len(raw))
+    whole = len(raw) < limit and arrived is not False
     if (fh.headers.get("Content-Encoding") or "").lower() == "gzip":
+        unzip = zlib.decompressobj(16 + zlib.MAX_WBITS)
         try:
-            raw = zlib.decompressobj(16 + zlib.MAX_WBITS).decompress(raw, limit)
-        except zlib.error:
-            raw = gzip.decompress(raw)
-        whole = whole and len(raw) < limit
+            raw = unzip.decompress(raw, limit)
+        except zlib.error as e:
+            raise gzip.BadGzipFile(f"the gzipped body could not be unzipped ({e})") from e
+        # A stream cut off by the network unzips to a prefix with no error at all; only
+        # reaching the stream's end shows it was all there, with or without a length.
+        whole = (whole and unzip.eof and not unzip.unconsumed_tail
+                 and not unzip.unused_data.strip(b"\0") and len(raw) < limit)
         raw = raw[:limit]
+    else:
+        whole = whole and arrived is True
     return raw.decode("utf-8", "replace"), whole
 
 
@@ -229,14 +341,33 @@ def _body(fh, limit: int) -> str:
 
 def request(url: str, payload: Optional[dict] = None,
             accept: str = "application/json") -> Tuple[Optional[object], Optional[str]]:
-    """(parsed JSON, None) or (None, why). A GET, or a JSON POST when `payload` is given."""
-    raw, err = request_raw(url, payload, accept)
-    if err:
-        return None, err
-    try:
-        return json.loads(raw), None
-    except ValueError:
-        return None, "the response was not JSON"
+    """(parsed JSON, None) or (None, why). A GET, or a JSON POST when `payload` is given.
+
+    A kept answer that a 304 sends back and that is not JSON was damaged before it was
+    kept. Asked again with its validators, the board would answer 304 for as long as it
+    does not change, so the kept copy is dropped and the board asked once more without
+    them. A kept copy counts as recently used only once it has parsed, and a new answer is
+    kept only once it has: one that is not JSON (a maintenance page) was kept, sent back
+    on the next 304, found not to be JSON and read again, two requests every run."""
+    for attempt in range(2):
+        raw, err, served, fresh = _get(url, payload, accept)
+        if err:
+            return None, err
+        try:
+            data = json.loads(raw)
+        except (ValueError, RecursionError):        # nested deeper than Python can follow
+            if served and not attempt:
+                _forget(served[0])
+                continue
+            if fresh:
+                _forget(fresh[0])   # nor is an older answer this one replaces worth asking about
+            return None, "the response was not JSON"
+        if served:
+            _kept_again(*served)
+        if fresh:
+            _keep(*fresh)
+        return data, None
+    return None, "the response was not JSON"
 
 
 class _HandBack(urllib.request.HTTPRedirectHandler):
@@ -263,6 +394,34 @@ def request_raw(url: str, payload: Optional[dict] = None,
     when that host's robots.txt does not refuse the path. A board's own robots.txt says
     nothing about the host it hands a reader on to.
     """
+    body, err, served, fresh = _get(url, payload, accept, limit)
+    if served:
+        _kept_again(*served)
+    if fresh:
+        _keep(*fresh)
+    return body, err
+
+
+def _kept_again(key: Key, cached: tuple) -> None:
+    """A kept answer a 304 sent back and that was read: recent again, in memory and on disk,
+    and still dated from when it was last read in full."""
+    _remember(key, cached[0], cached[2], cached[1], cached[3])
+    _touch(key, *cached)
+
+
+def _keep(key: Key, etag: str, modified: str, body: str) -> None:
+    """A new answer, kept to be asked about next time, in memory and on disk."""
+    fetched = _now()
+    _remember(key, etag, body, modified, fetched)
+    _disk_put(key, etag, modified, body, fetched)
+
+
+def _get(url: str, payload: Optional[dict] = None, accept: str = "*/*",
+         limit: int = 100_000_000):
+    """(body, why, served, fresh): request_raw's two, then ((url, accept), the kept
+    answer) when a 304 sent the body back from what was kept, and ((url, accept), etag,
+    last modified, body) for a new answer that can be kept. Each is None otherwise, and
+    the caller decides whether the body is worth keeping."""
     # gzip: a large board's JSON is a third of the size on the wire.
     headers = {"User-Agent": USER_AGENT, "Accept": accept, "Accept-Encoding": "gzip"}
     data = None
@@ -270,33 +429,52 @@ def request_raw(url: str, payload: Optional[dict] = None,
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
     for _hop in range(MAX_REDIRECTS + 1):
-        body, err, onward = _one(url, data, headers, limit)
+        body, err, onward, served, fresh = _one(url, data, headers, limit)
         if onward is None:
-            return body, err
+            return body, err, served, fresh
         nxt, code = onward
         old, new = urllib.parse.urlsplit(url), urllib.parse.urlsplit(nxt)
         if new.scheme not in ("http", "https") or not new.netloc:
-            return "", f"HTTP {code} to an address that is not a web page"
+            return "", f"HTTP {code} to an address that is not a web page", None, None
         if new.netloc.lower() != old.netloc.lower():
             why = robots_refuses(new.netloc, [new.path or "/"])
             if why:
-                return "", f"redirected to {new.netloc}, and {why}"
+                return "", f"redirected to {new.netloc}, and {why}", None, None
         if code == 303 or (code in (301, 302) and data is not None):
             data = None
             headers.pop("Content-Type", None)
         url = nxt
-    return "", f"more than {MAX_REDIRECTS} redirects"
+    return "", f"more than {MAX_REDIRECTS} redirects", None, None
+
+
+def _fits(body: str, limit: int) -> bool:
+    """Whether `body` is within `limit` bytes, as a fresh read would count it."""
+    return len(body) * 4 <= limit or len(body.encode("utf-8")) <= limit
 
 
 def _one(url: str, data, headers: dict, limit: int):
-    """(body, None, None), ("", why, None), or ("", None, (next url, status)) for a redirect."""
+    """(body, None, None, served, fresh), ("", why, None, None, None), or ("", None,
+    (next url, status), None, None) for a redirect. `served` is ((url, accept), the kept
+    answer) when a 304 sent the body back from what was kept: the caller marks it used
+    once it has read it. `fresh` is ((url, accept), etag, last modified, body) for a new
+    GET answer that came whole and can be asked about again: the caller keeps it
+    (`_keep`) once it is what the caller wanted."""
     headers = dict(headers)
     host = urllib.parse.urlsplit(url).netloc
-    cached = None
+    key = (url, headers.get("Accept", ""))
+    cached, expired = None, False
     if data is None:                 # a POST is never answered from what was kept
         with _ETAG_LOCK:
-            cached = _ETAGS.get(url)
-        cached = cached or _disk_get(url)
+            cached = _ETAGS.get(key)
+        cached = cached or _disk_get(key)
+        # A kept answer longer than this caller's `limit` is not what it would be given:
+        # read afresh, the body is cut at the limit. So it is not asked about, and the copy
+        # stays for the caller that can take it. (The limit is not part of the key: the
+        # same page under two limits is one answer whenever it fits both.)
+        if cached and not _fits(cached[2], limit):
+            cached = None
+        elif cached and not cached[0] and not 0 <= _now() - cached[3] < MODIFIED_MAX_AGE:
+            cached, expired = None, True     # read in full; see MODIFIED_MAX_AGE
     if cached:
         if cached[0]:
             headers["If-None-Match"] = cached[0]
@@ -317,25 +495,22 @@ def _one(url: str, data, headers: dict, limit: int):
                     body, whole = _read(fh, limit)
                     keep = _validators(fh.headers) if data is None and whole else None
             if keep:
-                _remember(url, keep[0], body, keep[1])
-                _disk_put(url, keep[0], keep[1], body)
-            elif cached:
-                _forget(url)         # what was kept no longer describes this answer
-            return body, None, None
+                return body, None, None, None, (key, keep[0], keep[1], body)
+            if cached or expired:
+                _forget(key)         # what was kept no longer describes this answer
+            return body, None, None, None, None
         except urllib.error.HTTPError as e:
             if e.code == 304 and cached:
-                _remember(url, cached[0], cached[2], cached[1])
-                _touch(url, *cached)
-                return cached[2], None, None
+                return cached[2], None, None, (key, cached), None
             if e.code in REDIRECTS and e.headers and e.headers.get("Location"):
-                return "", None, (urllib.parse.urljoin(url, e.headers["Location"]), e.code)
+                return "", None, (urllib.parse.urljoin(url, e.headers["Location"]), e.code), None, None
             err = f"HTTP {e.code}"
             if e.code not in (502, 504):
                 break
         # HTTPException covers a body cut off mid-read, which is not an OSError.
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as e:
             err = type(e).__name__
-    return "", err, None
+    return "", err, None, None, None
 
 
 # ------------------------------------------------------------------ robots.txt

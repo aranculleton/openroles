@@ -45,13 +45,13 @@ def exists(token: str) -> bool:
 def fetch(token: str) -> List[Job]:
     out = []
     for j in _jobs(token):
-        title, url = text_of(j, "title"), text_of(j, "url")
+        number, title, url = text_of(j, "id"), text_of(j, "title"), text_of(j, "url")
         status = text_of(j, "status").lower()
-        if not title or not url or (status and status != "open"):
+        if not number or not title or not url or (status and status != "open"):
             continue
         place = ", ".join(x for x in (text_of(j, "city"), text_of(j, "state"), text_of(j, "country")) if x)
         out.append(Job(
-            id=f"jz-{text_of(j, 'id')}",
+            id=f"jz-{number}",
             ats="jazzhr",
             board=token,
             title=title,

@@ -17,7 +17,7 @@ from typing import Callable, Iterable, List, Optional, Tuple, Union
 from urllib.parse import quote, unquote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, iso_day, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, as_list, clean, html_to_text, iso_day, workplace_of
 
 PAGE = 20            # Workday serves at most 20 postings a page
 MAX_OFFSET = 2000    # and stops paging at an offset of 2,000
@@ -40,6 +40,10 @@ _MORE = re.compile(r" and \d+ more$")
 # A posting's path inside its board, and nothing else. It comes from the listing's
 # structured `externalPath`, and anything that could point elsewhere is refused.
 _PATH = re.compile(r"^/job/[^\s?#\\]+$")
+# What a posting's address leaves as it is when it writes the listing's path: everything
+# else is percent-encoded, and a "%" stays, so a path the listing sends already encoded
+# keeps its escapes.
+PATH_SAFE = "/-_.~%"
 _POSTED = re.compile(r"posted\s+(today|yesterday|(\d+)(\+)?\s+days?\s+ago)", re.I)
 
 Details = Union[bool, Callable[[Job], bool]]
@@ -214,7 +218,7 @@ class WorkdayBoard:
         return self.call(f"{self.api}{quote(path, safe='/-_.~%')}")
 
     def public_url(self, path: str) -> str:
-        return f"https://{self.host}/{self.site}{quote(path, safe='/-_.~%')}"
+        return f"https://{self.host}/{self.site}{quote(path, safe=PATH_SAFE)}"
 
     # -------------------------------------------------------------- listing
 
@@ -320,6 +324,9 @@ class WorkdayBoard:
         where = where or primary
         remote = clean(posting.get("remoteType")).lower()
         return Job(
+            # The path's last segment as the listing sends it, exactly as 0.2.0 gave it: an
+            # id a caller has stored must not change under them. job_id() reads it back
+            # from the posting's address (see ids._workday_segment).
             id=f"wd-{self.tenant}-{path.rsplit('/', 1)[-1]}",
             ats="workday",
             board=self.token,
@@ -341,7 +348,7 @@ class WorkdayBoard:
         country = clean(place.get("descriptor")) if isinstance(place, dict) else ""
         labels = [with_country(info.get("location") or posting.get("locationsText")
                                or path_place(posting.get("externalPath")), country)]
-        labels += [with_country(a, country) for a in info.get("additionalLocations") or []
+        labels += [with_country(a, country) for a in as_list(info.get("additionalLocations"))
                    if isinstance(a, str)]
         labels = list(dict.fromkeys(x for x in labels if x))
         remote = clean(info.get("remoteType") or posting.get("remoteType")).lower()
@@ -354,13 +361,24 @@ class WorkdayBoard:
         job.posted = iso_day(info.get("startDate")) or job.posted
         job.employment_type = clean(info.get("timeType"))
         job.deadline = iso_day(info.get("endDate"))
-        job.description = html_to_text(str(info.get("jobDescription") or "")) or None
+        job.description = html_to_text(info.get("jobDescription")) or None
         return job
 
 
 def _valid(path) -> bool:
     return (isinstance(path, str) and bool(_PATH.match(path))
-            and ".." not in path and "//" not in path)
+            and ".." not in path and "//" not in path and _writable(path))
+
+
+def _writable(path: str) -> bool:
+    """Whether the path can be written into an address at all: JSON can carry a lone
+    surrogate ("\\ud800"), which has no UTF-8, and its posting raised UnicodeEncodeError
+    out of fetch()."""
+    try:
+        path.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _log():

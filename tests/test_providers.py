@@ -122,3 +122,44 @@ def test_lever_reads_a_location_entry_whether_name_or_object(web):
     data[0]["categories"]["allLocations"] = ["Manchester", {"location": "Leeds"}, {"name": "York"}, {}]
     web.routes["api.lever.co/v0/postings/acme"] = data
     assert lever.fetch("acme")[0].locations == ["Manchester", "Leeds", "York"]
+
+
+def test_a_description_s_markup_is_dropped_in_linear_time():
+    """A "<" with no ">" after it sent the tag pattern to the end of the text for every
+    one: 60 kB of "<br" took 1.6 seconds and 180 kB took 15. Each now takes a small
+    fraction of the bound."""
+    import time
+
+    from openroles.models import html_to_text
+    for text in ("<br" * 20_000, "<a " * 300_000, "<br" * 300_000, "<a " * 300_000 + ">"):
+        start = time.perf_counter()
+        html_to_text(text)
+        assert time.perf_counter() - start < 1.0, text[:12]
+    assert html_to_text("<p>Plan</p><br><<a href=x>the week</a> <> 2 < 3") == "Plan\n\nthe week <> 2 < 3"
+
+
+def test_a_description_reads_as_the_two_tag_patterns_read_it():
+    """The two tag patterns now run only up to the last ">"; on text built from the pieces
+    that decide them, that gives the same text as running them over all of it."""
+    import html
+    import random
+    import re
+
+    from openroles.models import BODY_CAP, html_to_text
+
+    def by_patterns(s):
+        for _ in range(3):
+            un = html.unescape(s)
+            if un == s:
+                break
+            s = un
+        s = re.sub(r"<(br|/p|/li|/div|/h\d)[^>]*>", "\n", s, flags=re.I)
+        s = re.sub(r"<[^>]+>", " ", s)
+        s = re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", s))
+        return "\n".join(line.strip() for line in s.splitlines()).strip()[:BODY_CAP]
+    pieces = ["<", ">", "<>", "br", "BR", "/p", "/P", "/li", "/div", "/h1", "/h", "/H9", "a", " ",
+              "\n", "\t", "&lt;", "&gt;", "&amp;lt;", "<br>", "<br/>", "</p>", "<p>", "x", "İ", "/"]
+    rnd = random.Random(3)
+    for _ in range(5_000):
+        text = "".join(rnd.choice(pieces) for _ in range(rnd.randint(0, 16)))
+        assert html_to_text(text) == by_patterns(text), text

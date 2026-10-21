@@ -90,6 +90,18 @@ class Job:
 
 
 _TAG = re.compile(r"<[^>]+>")
+# The tags that end a line: <br>, and the end of a paragraph, list item, block or heading.
+_BREAK = re.compile(r"<(br|/p|/li|/div|/h\d)[^>]*>", re.I)
+
+
+def _swap_tags(pattern, repl: str, s: str) -> str:
+    """pattern.sub(repl, s) for a tag pattern, which ends at a ">": run only up to the last
+    ">" in `s`, since no tag can start after it. Before it, every "<" has a ">" to stop at,
+    so the pattern never looks far ahead; over the whole text, it looked to the end of the
+    text for every "<" with no ">" after it, and a description of "<a " repeated took
+    seconds."""
+    cut = s.rfind(">") + 1
+    return pattern.sub(repl, s[:cut]) + s[cut:]
 
 
 def html_to_text(content: str) -> str:
@@ -100,8 +112,8 @@ def html_to_text(content: str) -> str:
         if un == s:
             break
         s = un
-    s = re.sub(r"<(br|/p|/li|/div|/h\d)[^>]*>", "\n", s, flags=re.I)
-    s = _TAG.sub(" ", s)
+    s = _swap_tags(_BREAK, "\n", s)
+    s = _swap_tags(_TAG, " ", s)
     s = re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", s))
     return "\n".join(line.strip() for line in s.splitlines()).strip()[:BODY_CAP]
 

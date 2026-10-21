@@ -141,13 +141,18 @@ def _lower(obj):
 
 
 def _unframed(text: str) -> str:
-    """The script without the comment or CDATA lines at either end."""
+    """The script without the comment or CDATA lines at either end.
+
+    In one pass from each end and one slice: dropping lines one at a time from the front
+    of a list moved every line after them each time, and a script that opened with a few
+    hundred thousand comment lines held a read for minutes."""
     lines = text.split("\n")
-    while lines and not _FRAMING.sub("", lines[0]):
-        lines.pop(0)
-    while lines and not _FRAMING.sub("", lines[-1]):
-        lines.pop()
-    return "\n".join(lines)
+    first, last = 0, len(lines)
+    while first < last and not _FRAMING.sub("", lines[first]):
+        first += 1
+    while last > first and not _FRAMING.sub("", lines[last - 1]):
+        last -= 1
+    return "\n".join(lines[first:last])
 
 
 def _leading(text: str) -> list:
@@ -178,12 +183,15 @@ def json_values(block: str) -> list:
     extruct's JSON-LD reader handles (scrapinghub/extruct, BSD-3-Clause), written afresh.
     """
     text = block.strip()
-    for attempt in (text, _unframed(text)):
-        found = _leading(attempt)
-        if found:
-            return found
-    unescaped = _html.unescape(_unframed(text))
-    return _leading(unescaped) if unescaped != _unframed(text) else []
+    found = _leading(text)
+    if found:
+        return found
+    unframed = _unframed(text)
+    found = _leading(unframed)
+    if found:
+        return found
+    unescaped = _html.unescape(unframed)
+    return _leading(unescaped) if unescaped != unframed else []
 
 
 def postings(html: str) -> List[dict]:

@@ -149,6 +149,20 @@ def test_a_script_that_is_not_a_jobposting_still_gives_nothing():
         assert careersite.postings(script) == [], script
 
 
+def test_a_script_wrapped_in_a_great_many_comment_lines_is_read_in_linear_time():
+    """Dropping framing lines one at a time from the front took 20 seconds here, and a
+    5 MB page could hold one read for many minutes. The bound is generous; the fixed
+    reader takes a small fraction of it."""
+    import time
+    framing = "//\n" * 200_000
+    for body, want in ((FLAT, ["Demand Planner"]), ("{oops", [])):
+        page = f'<script type="application/ld+json"><!--\n{framing}{body}\n{framing}--></script>'
+        start = time.perf_counter()
+        found = careersite.postings(page)
+        assert time.perf_counter() - start < 2.0
+        assert [p["title"] for p in found] == want
+
+
 def test_a_page_whose_description_keeps_its_line_breaks_is_a_role(web):
     site(web)
     lead = PLANNER.replace("Demand Planner", "Planning Lead")

@@ -12,7 +12,7 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, pay, workplace_of
 
 HOST = "careers-api.clearcompany.com"
 SITE_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
@@ -90,6 +90,7 @@ def fetch(token: str) -> List[Job]:
             posted=iso_day(r.get("postedDate"), r.get("openDate")),
             department=clean(r.get("departmentName")),
             compensation=_pay(r),
+            **pay(r.get("salaryRangeLow"), r.get("salaryRangeHigh"), "", r.get("salaryType")),
             description=html_to_text(str(r.get("description") or "")) or None,
             workplace="remote" if remote and all("remote" in p.lower() for p in places) else workplace_of(*places),
         ))

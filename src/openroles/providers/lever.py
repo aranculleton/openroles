@@ -12,7 +12,7 @@ from typing import List, Optional, Tuple
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, pay, workplace_of
 
 HOSTS = ("https://api.lever.co", "https://api.eu.lever.co")
 PATH = "/v0/postings/{token}?mode=json"
@@ -81,6 +81,11 @@ def _pay(j: dict) -> str:
     return clean(f"{r.get('currency') or ''} {span} {unit}")
 
 
+def _salary(j: dict) -> dict:
+    r = j.get("salaryRange") if isinstance(j.get("salaryRange"), dict) else {}
+    return pay(r.get("min"), r.get("max"), r.get("currency"), r.get("interval"))
+
+
 def fetch(token: str) -> List[Job]:
     data, why = _postings(token)
     if data is None:
@@ -110,6 +115,7 @@ def fetch(token: str) -> List[Job]:
             employment_type=clean(cats.get("commitment")),
             compensation=_pay(j),
             description=_description(j),
+            **_salary(j),
             workplace=workplace_of(workplace),
         ))
     return out

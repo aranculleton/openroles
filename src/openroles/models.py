@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import html
+import math
 import re
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional
@@ -74,6 +75,14 @@ class Job:
     # "remote", "hybrid", "onsite", or "" when the board does not say. `remote` stays
     # for callers that only ask yes or no; this is the one that can say hybrid.
     workplace: str = ""
+    # The posted pay band as numbers, only where the board publishes it as numbers: never
+    # read out of the description. `compensation` is the same band as the board words it.
+    # The currency is the ISO 4217 code the board gives ("GBP"), and the period one of
+    # "hour", "day", "week", "month", "year", or "" when the board does not say.
+    salary_min: Optional[float] = None
+    salary_max: Optional[float] = None
+    salary_currency: str = ""
+    salary_period: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -146,3 +155,53 @@ def iso_day(*values) -> str:
         except ValueError:
             continue
     return ""
+
+
+# A plain number, or one with comma thousands ("48,000"). "48.000" is left alone: it is
+# forty-eight thousand in much of Europe and forty-eight elsewhere, and a wrong salary is
+# worse than none.
+_AMOUNT = re.compile(r"\s*(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.[0-9]+)?\s*")
+_DOT_THOUSANDS = re.compile(r"\s*[0-9]{1,3}(?:\.[0-9]{3})+\s*")
+
+
+def amount(value) -> Optional[float]:
+    """A pay figure a board wrote as a number or as plain digits, or None. Zero and below are
+    a board's way of leaving the field blank."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        x = float(value)
+    elif isinstance(value, str) and _AMOUNT.fullmatch(value) and not _DOT_THOUSANDS.fullmatch(value):
+        x = float(value.replace(",", ""))
+    else:
+        return None
+    if not math.isfinite(x) or x <= 0:
+        return None
+    return int(x) if x.is_integer() else x
+
+
+_NOT_A_PERIOD = ("biweek", "fortnight", "semimonth", "bimonth", "onetime")
+_PERIODS = (("hour", "hour"), ("daily", "day"), ("day", "day"), ("week", "week"),
+            ("month", "month"), ("annual", "year"), ("annum", "year"), ("year", "year"))
+
+
+def period_of(value) -> str:
+    """"hour", "day", "week", "month", "year" or "" from what boards write: Lever's
+    "per-year-salary", Ashby's "1 YEAR", Rippling's "ANNUAL", schema.org's "HOUR". A period
+    no field here can hold ("bi-weekly", "one-time") is ""."""
+    v = re.sub(r"[^a-z]", "", str(value or "").lower())
+    if not v or any(w in v for w in _NOT_A_PERIOD):
+        return ""
+    return next((period for word, period in _PERIODS if word in v), "")
+
+
+def pay(low=None, high=None, currency="", period="") -> dict:
+    """A Job's salary fields from a board's structured pay, all empty when it gives no
+    amount: a currency or a period with no figure says nothing."""
+    lo, hi = amount(low), amount(high)
+    if lo is None and hi is None:
+        return {"salary_min": None, "salary_max": None, "salary_currency": "", "salary_period": ""}
+    code = clean(currency).upper()
+    return {"salary_min": lo, "salary_max": hi,
+            "salary_currency": code if re.fullmatch(r"[A-Z]{3}", code) else "",
+            "salary_period": period_of(period)}

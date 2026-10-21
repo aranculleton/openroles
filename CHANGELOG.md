@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### New
+
+- **The posted pay band as numbers: `salary_min`, `salary_max`, `salary_currency` and
+  `salary_period`.** Filled only where the board publishes its pay as numbers (Lever,
+  Ashby, Recruitee, Rippling, ClearCompany and careers sites' schema.org `baseSalary`),
+  never read out of a description. `compensation` keeps the band as the board words it.
+  Ashby's equity and bonus are not salary, and Ashby tiers in different currencies give
+  no figures rather than a band that mixes them. A figure that could be misread, such as
+  "48.000", is left out.
+
 ### Fixed
 
 - **`posted` and `deadline` are always a real `YYYY-MM-DD`, or empty.** Every reader cut

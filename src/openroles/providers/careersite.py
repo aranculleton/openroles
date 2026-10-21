@@ -27,7 +27,7 @@ from typing import Callable, Iterable, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, pay, workplace_of
 from ._xml import parse
 
 LIMIT = 40              # job pages read in one call
@@ -250,6 +250,19 @@ def _pay(p: dict) -> str:
                  f"{clean(v.get('unittext')).lower()}")
 
 
+def _salary(p: dict) -> dict:
+    """schema.org baseSalary as numbers: a MonetaryAmount whose value is a range
+    (minValue, maxValue) or one figure, which is then both ends."""
+    s = p.get("basesalary")
+    if not isinstance(s, dict):
+        return pay()
+    v = s.get("value") if isinstance(s.get("value"), dict) else {"value": s.get("value")}
+    lo, hi = v.get("minvalue"), v.get("maxvalue")
+    if lo is None and hi is None:
+        lo = hi = v.get("value")
+    return pay(lo, hi, s.get("currency") or p.get("salarycurrency"), v.get("unittext"))
+
+
 def _job(token: str, page: str, p: dict) -> Optional[Job]:
     title = clean(p.get("title"))
     if not title:
@@ -271,6 +284,7 @@ def _job(token: str, page: str, p: dict) -> Optional[Job]:
         posted=_date(p.get("dateposted")),
         employment_type=", ".join(clean(k) for k in kinds) if isinstance(kinds, list) else clean(kinds),
         compensation=_pay(p),
+        **_salary(p),
         deadline=_date(p.get("validthrough")),
         description=html_to_text(str(p.get("description") or "")) or None,
         workplace="remote" if remote else workplace_of(*places),

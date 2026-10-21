@@ -138,7 +138,8 @@ Every role, from every system, has the same fields:
 | `remote` | `True`, `False`, or `None` when the board does not say (hybrid is `None`) |
 | `posted` | `YYYY-MM-DD`, first published (not last edited) where the system says; see below |
 | `department`, `employment_type` | where the board provides them |
-| `compensation` | the posted pay band, where the employer publishes one |
+| `compensation` | the posted pay band, where the employer publishes one, as the board words it |
+| `salary_min`, `salary_max`, `salary_currency`, `salary_period` | the same band as numbers, its ISO currency code and `hour`, `day`, `week`, `month` or `year`, only where the board publishes them as numbers (Lever, Ashby, Recruitee, Rippling, ClearCompany, careers sites); never read out of a description |
 | `deadline` | where the board provides one |
 | `description` | plain text, HTML removed |
 

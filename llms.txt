@@ -19,7 +19,7 @@
 
 ## Job fields
 
-id, ats, board, title, url, location, locations, workplace ("remote"/"hybrid"/"onsite"/""), remote (true/false/null), posted (YYYY-MM-DD), department, employment_type, compensation, deadline, description (plain text).
+id, ats, board, title, url, location, locations, workplace ("remote"/"hybrid"/"onsite"/""), remote (true/false/null), posted (YYYY-MM-DD or ""), department, employment_type, compensation (as the board words it), salary_min, salary_max (numbers or null), salary_currency (ISO code or ""), salary_period ("hour"/"day"/"week"/"month"/"year"/""), deadline (YYYY-MM-DD or ""), description (plain text). The salary_* fields are filled only where the board publishes its pay as numbers, never from the description.
 
 ## Notes
 

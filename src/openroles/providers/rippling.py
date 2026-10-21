@@ -14,7 +14,7 @@ from typing import Callable, List, Optional, Union
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, pay, workplace_of
 
 HOST = "api.rippling.com"
 BASE = "https://api.rippling.com/platform/api/ats/v2/board/{slug}"
@@ -70,6 +70,14 @@ def _pay(detail: dict) -> str:
     return ""
 
 
+def _salary(detail: dict) -> dict:
+    """The same range `_pay` words: the first with a figure."""
+    for r in detail.get("payRangeDetails") or []:
+        if isinstance(r, dict) and (r.get("rangeStart") is not None or r.get("rangeEnd") is not None):
+            return pay(r.get("rangeStart"), r.get("rangeEnd"), r.get("currency"), r.get("frequency"))
+    return pay()
+
+
 def fetch(token: str, details: Details = False, report: Optional[dict] = None) -> List[Job]:
     """Every role on the board. `details` (False, True, or a function given the listing-level
     Job) decides whose own record is fetched for its description, date and pay."""
@@ -109,6 +117,8 @@ def fetch(token: str, details: Details = False, report: Optional[dict] = None) -
         job.posted = iso_day(detail.get("createdOn"))
         job.employment_type = clean(kind.get("label")) if isinstance(kind, dict) else clean(kind)
         job.compensation = _pay(detail)
+        for name, value in _salary(detail).items():
+            setattr(job, name, value)
         job.description = body or None
     if report is not None:
         report.update(listing_errors=[], detail_errors=failed, details_asked=len(want))

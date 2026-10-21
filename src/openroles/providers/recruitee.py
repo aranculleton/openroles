@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import List
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day
+from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, pay
 
 URL = "https://{host}/api/offers/"
 NEEDS_TOKEN = ("Recruitee asks for the employer's own Careers Site API token from 10 February "
@@ -76,6 +76,11 @@ def _pay(offer: dict) -> str:
     return clean(f"{s.get('currency') or ''} {span} {clean(s.get('period')).replace('_', ' ')}")
 
 
+def _salary(offer: dict) -> dict:
+    s = offer.get("salary") if isinstance(offer.get("salary"), dict) else {}
+    return pay(s.get("min"), s.get("max"), s.get("currency"), s.get("period"))
+
+
 def fetch(token: str) -> List[Job]:
     out = []
     for o in _offers(token):
@@ -103,6 +108,7 @@ def fetch(token: str) -> List[Job]:
             department=clean(o.get("department")),
             employment_type=clean(o.get("employment_type_code")).replace("_", " "),
             compensation=_pay(o),
+            **_salary(o),
             deadline=iso_day(o.get("close_at")),
             description=body or None,
             workplace=workplace,

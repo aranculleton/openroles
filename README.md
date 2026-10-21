@@ -107,8 +107,12 @@ Every read still asks the board. It is off by default. An answer is kept only wh
 a GET, is not marked `no-store`, and shows that all of it arrived: all of its
 `Content-Length`, every chunk of a chunked answer, or a gzip stream to its end. One that
 gives no length and is neither chunked nor gzipped ends when the connection closes, cut
-short or not, so it is read in full every time. Kept answers are in owner-only files, at
-most 500 MB and for 30 days unused.
+short or not, so it is read in full every time. Kept answers are in owner-only files, for
+30 days unused, and about 500 MB of them: each process keeps the folder to that, so two
+processes writing to one folder at once (a long-running application and a command-line
+run, say) can take it past that until one of them next looks at the whole folder: when it
+starts using it, at least once an hour while it does, and whenever what it has written
+itself passes the cap.
 
 Everything a search decides for itself stays a parameter: `query`, `location`, `remote`,
 `since_days`, `country`, and `details`, which can be a function that says which postings

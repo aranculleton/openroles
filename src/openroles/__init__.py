@@ -40,8 +40,11 @@ def configure(user_agent: Optional[str] = None, robots_agents: Optional[Iterable
                       ETag or Last-Modified date the board sent: the next run asks with
                       them, and a board that has not changed answers 304 and sends nothing.
                       Every read still asks the board; nothing is served without asking.
-                      Off by default; False turns it off. Only GET answers are kept, never
-                      one the host marks no-store, and at most 500 MB, for 30 days unused.
+                      Off by default; False turns it off. Only GET answers that show they
+                      arrived whole are kept, never one the host marks no-store, for 30
+                      days unused, and about 500 MB of them: each process keeps the folder
+                      to that, so two writing to it at once can take it past until one of
+                      them next looks at the whole folder (at least hourly while in use).
     """
     from . import _http
     if cache_dir is not None:

@@ -106,9 +106,9 @@ def _validators(headers) -> Optional[Tuple[str, str]]:
 
 # Where answers are kept between runs: "" keeps nothing on disk (the default). Set with
 # openroles.configure(cache_dir=...). Each answer is one gzipped file named for a hash of
-# its address, readable by its owner alone; the folder holds at most CACHE_BYTES, and an
-# answer not asked for in CACHE_DAYS goes. It only ever spares a download: every read
-# still asks the host, and a 304 is the host saying nothing changed.
+# its address, readable by its owner alone; the folder holds about CACHE_BYTES (see
+# PRUNE_SECONDS), and an answer not asked for in CACHE_DAYS goes. It only ever spares a
+# download: every read still asks the host, and a 304 is the host saying nothing changed.
 CACHE_DIR = ""
 CACHE_BYTES = 500_000_000
 CACHE_DAYS = 30
@@ -116,7 +116,8 @@ CACHE_DAYS = 30
 # only 304s still drops what is past CACHE_DAYS; then every PRUNE_SECONDS, for a long-running
 # server; and whenever a running total of what this process wrote takes it past CACHE_BYTES.
 # The total starts from the look, so another process writing to the same folder at the same
-# time is counted at this one's next look.
+# time is counted at this one's next look: the cap holds for each process, and two writing
+# to one folder at once can take it past the cap until one of them looks again.
 PRUNE_SECONDS = 3600
 # A look that finds the folder over CACHE_BYTES takes it down to this share of it. Taken
 # down only to the cap, the next write passed it again, and every write after that looked

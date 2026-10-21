@@ -92,13 +92,18 @@ def _validators(headers) -> Optional[Tuple[str, str]]:
 CACHE_DIR = ""
 CACHE_BYTES = 500_000_000
 CACHE_DAYS = 30
-PRUNE_EVERY = 500          # writes between tidies of the folder, after the first
+# The folder is looked at whole on its first use in a process, read or write, so a run of
+# only 304s still drops what is past CACHE_DAYS; then every PRUNE_SECONDS, for a long-running
+# server; and whenever a running total of what this process wrote takes it past CACHE_BYTES.
+# The total starts from the look, so another process writing to the same folder at the same
+# time is counted at this one's next look.
+PRUNE_SECONDS = 3600
 # Written into every file. A file without it, or with another, is a miss and is replaced on
 # the next full answer: so a release that changes what a file means, or one that must not
 # trust what an earlier build wrote (before 0.3.0 a body cut short by the network could be
 # kept), says so by raising it.
 CACHE_FORMAT = 1
-_WRITES: dict = {}
+_TIDY: dict = {}           # folder -> [bytes it holds as far as this process knows, last look]
 _PRUNE_LOCK = threading.Lock()
 
 
@@ -116,6 +121,7 @@ def _disk_get(url: str) -> Optional[Tuple[str, str, str]]:
     foreign file is a miss, never an error."""
     if not CACHE_DIR:
         return None
+    _tidy(os.path.join(CACHE_DIR, "http"))
     try:
         with gzip.open(_cache_file(url), "rt", encoding="utf-8") as fh:
             entry = json.load(fh)
@@ -133,6 +139,7 @@ def _disk_put(url: str, etag: str, modified: str, body: str) -> None:
     if not CACHE_DIR:
         return
     folder = os.path.join(CACHE_DIR, "http")
+    path = _cache_file(url)
     tmp = ""
     try:
         os.makedirs(folder, mode=0o700, exist_ok=True)
@@ -141,7 +148,12 @@ def _disk_put(url: str, etag: str, modified: str, body: str) -> None:
             fh.write(json.dumps({"v": CACHE_FORMAT, "url": url, "etag": etag,
                                  "last_modified": modified, "body": body},
                                 ensure_ascii=False).encode("utf-8"))
-        os.replace(tmp, _cache_file(url))
+        grown = os.path.getsize(tmp)
+        try:
+            grown -= os.path.getsize(path)          # the copy this one replaces
+        except OSError:
+            pass
+        os.replace(tmp, path)
         tmp = ""
     except OSError:
         return                      # a cache that cannot be written is only a slower run
@@ -151,11 +163,20 @@ def _disk_put(url: str, etag: str, modified: str, body: str) -> None:
                 os.remove(tmp)
             except OSError:
                 pass
+    _tidy(folder, grown)
+
+
+def _tidy(folder: str, grown: int = 0) -> None:
+    """Keep the folder to CACHE_BYTES and CACHE_DAYS: see PRUNE_SECONDS for when it is
+    looked at whole. `grown` is what a write just added."""
     with _PRUNE_LOCK:
-        n = _WRITES.get(folder, 0)
-        _WRITES[folder] = n + 1
-    if n % PRUNE_EVERY == 0:
-        prune(folder)
+        now = time.monotonic()
+        known = _TIDY.get(folder)
+        if known is not None:
+            known[0] += grown
+            if known[0] <= CACHE_BYTES and now - known[1] < PRUNE_SECONDS:
+                return
+        _TIDY[folder] = [prune(folder), now]
 
 
 def _touch(url: str, etag: str, modified: str, body: str) -> None:
@@ -163,20 +184,21 @@ def _touch(url: str, etag: str, modified: str, body: str) -> None:
     known only in memory (the folder was named after it was read) is written down."""
     if not CACHE_DIR:
         return
+    _tidy(os.path.join(CACHE_DIR, "http"))
     try:
         os.utime(_cache_file(url))
     except OSError:
         _disk_put(url, etag, modified, body)
 
 
-def prune(folder: str, now: Optional[float] = None) -> None:
+def prune(folder: str, now: Optional[float] = None) -> int:
     """Answers older than CACHE_DAYS go, then the oldest until the folder is under
-    CACHE_BYTES; a write cut off more than an hour ago goes too."""
+    CACHE_BYTES; a write cut off more than an hour ago goes too. The bytes kept."""
     now = time.time() if now is None else now
     try:
         entries = list(os.scandir(folder))
     except OSError:
-        return
+        return 0
     kept = []
     for e in entries:
         try:
@@ -201,6 +223,7 @@ def prune(folder: str, now: Optional[float] = None) -> None:
             total -= size
         except OSError:
             pass
+    return total
 
 
 def _wait_turn(host: str) -> None:

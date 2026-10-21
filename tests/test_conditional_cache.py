@@ -56,7 +56,7 @@ def clean(monkeypatch):
     new_process(monkeypatch)
     monkeypatch.setattr(_http, "_DELAYS", {})
     monkeypatch.setattr(_http, "CACHE_DIR", "", raising=False)
-    monkeypatch.setattr(_http, "_WRITES", {}, raising=False)
+    monkeypatch.setattr(_http, "_TIDY", {}, raising=False)
 
 
 def files(folder) -> list:
@@ -332,3 +332,41 @@ def test_a_corrupt_gzip_body_is_a_failed_read_not_an_exception(monkeypatch):
           headers={"ETag": '"v1"', "Content-Encoding": "gzip"})
     monkeypatch.setattr(_http, "RETRY_PAUSE", 0)
     assert _http.request(URL) == (None, "BadGzipFile")
+
+
+# ------------------------------------------------------------------ the folder's caps
+
+def folder_bytes(folder) -> int:
+    return sum(os.path.getsize(p) for p in files(folder))
+
+
+def test_the_size_cap_holds_after_every_write_not_only_some(monkeypatch, tmp_path):
+    import random
+    openroles.configure(cache_dir=tmp_path)
+    monkeypatch.setattr(_http, "CACHE_BYTES", 10_000)
+    board = Board(monkeypatch)
+    for i in range(50):
+        board.body = random.Random(i).getrandbits(8 * 2500).to_bytes(2500, "big").hex().encode()
+        _http.request_raw(f"{URL}?page={i}")
+        assert folder_bytes(tmp_path) <= 10_000
+
+
+def test_a_run_of_only_304s_still_keeps_the_folder_to_its_caps(monkeypatch, tmp_path):
+    openroles.configure(cache_dir=tmp_path)
+    board = Board(monkeypatch)
+    _http.request(URL)                                          # the one still in use
+    folder = tmp_path / "http"
+    old = folder / ("a" * 64 + ".json.gz")                      # one not asked for in 40 days
+    old.write_bytes(b"x" * 10)
+    os.utime(old, (old.stat().st_mtime - 40 * 86400,) * 2)
+    for n in (1, 2, 3):                                         # and more than the folder may hold
+        extra = folder / (f"{n}" * 64 + ".json.gz")
+        extra.write_bytes(b"x" * 400)
+        os.utime(extra, (extra.stat().st_mtime - 86400 * n,) * 2)
+    monkeypatch.setattr(_http, "CACHE_BYTES", 900)
+    new_process(monkeypatch)
+    monkeypatch.setattr(_http, "_TIDY", {}, raising=False)
+    assert _http.request(URL) == ({"jobs": [1]}, None)
+    assert board.sent[-1] == ('"v1"', None)                     # a 304: nothing was written
+    assert not old.exists() and folder_bytes(tmp_path) <= 900
+    assert len(files(tmp_path)) == 2                            # the one in use, and the newest

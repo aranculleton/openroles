@@ -37,6 +37,8 @@
   copy that a 304 sends back and that is not JSON is dropped and read afresh; and each
   cache file carries a format version, so files an earlier build wrote are ignored.
   0.2.0 had the same flaw in memory, for the life of a process.
+- **The cache folder keeps to its 500 MB after every write, not only after every 500th,**
+  and a run that gets only 304s still drops what has gone unused for 30 days.
 - **`posted` and `deadline` are always a real `YYYY-MM-DD`, or empty.** Every reader cut
   the board's value to ten characters, so a date written another way ("1/9/2026") came out
   as text that `since_days` compared as older than any real date, and the role was dropped

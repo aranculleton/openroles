@@ -13,6 +13,7 @@ import gzip
 import hashlib
 import http.client
 import json
+import math
 import os
 import tempfile
 import threading
@@ -50,9 +51,19 @@ def _slot(host: str) -> threading.BoundedSemaphore:
 # the Accept it was asked with, since one address can answer JSON to one and HTML to
 # another, and a host that only sends Last-Modified would answer 304 to both.
 ETAG_BYTES = 32_000_000
-_ETAGS: OrderedDict = OrderedDict()   # (url, accept) -> (etag, last modified, body), oldest first
+# (url, accept) -> (etag, last modified, body, when it was last read in full), oldest first
+_ETAGS: OrderedDict = OrderedDict()
 _ETAG_LOCK = threading.Lock()
 Key = Tuple[str, str]
+# An answer kept with a Last-Modified date and no ETag is asked about with If-Modified-Since
+# for this long after it was last read in full (a 304 does not count), then read in full
+# once. A host whose Last-Modified stays put while its data changes answers 304 to every
+# such question, and each 304 counts as recent use, so without a bound its kept copy would
+# be the answer for good. An ETag names the body itself and has no such bound.
+MODIFIED_MAX_AGE = 24 * 3600
+# The wall clock MODIFIED_MAX_AGE is measured on, in seconds since 1970. A name of its own,
+# so a test can move it on a day without waiting one.
+_now = time.time
 # The characters the kept bodies hold, and the store that total is for. A running total:
 # adding every body up again on each insert made a run of n answers cost n squared. A store
 # put in _ETAGS's place (a fresh process in a test) is counted once, the first time.
@@ -61,21 +72,24 @@ _HELD: list = [None, 0]
 
 def _held() -> int:
     if _HELD[0] is not _ETAGS:
-        _HELD[:] = [_ETAGS, sum(len(entry[-1]) for entry in _ETAGS.values())]
+        _HELD[:] = [_ETAGS, sum(len(entry[2]) for entry in _ETAGS.values())]
     return _HELD[1]
 
 
-def _remember(key: Key, etag: str, body: str, modified: str = "") -> None:
+def _remember(key: Key, etag: str, body: str, modified: str = "",
+              fetched: Optional[float] = None) -> None:
+    """Keep an answer in memory. `fetched` is when it was last read in full: now, unless
+    a 304 is sending back one read earlier."""
     with _ETAG_LOCK:
         size = _held()
         old = _ETAGS.pop(key, None)
         if old is not None:
-            size -= len(old[-1])
-        _ETAGS[key] = (etag, modified, body)
+            size -= len(old[2])
+        _ETAGS[key] = (etag, modified, body, _now() if fetched is None else fetched)
         size += len(body)
         while _ETAGS and size > ETAG_BYTES:
             _, gone = _ETAGS.popitem(last=False)
-            size -= len(gone[-1])
+            size -= len(gone[2])
         _HELD[1] = size
 
 
@@ -84,7 +98,7 @@ def _forget(key: Key) -> None:
         size = _held()
         old = _ETAGS.pop(key, None)
         if old is not None:
-            _HELD[1] = size - len(old[-1])
+            _HELD[1] = size - len(old[2])
     if CACHE_DIR:
         try:
             os.remove(_cache_file(key))
@@ -142,9 +156,10 @@ def _cache_file(key: Key) -> str:
     return os.path.join(CACHE_DIR, "http", name)
 
 
-def _disk_get(key: Key) -> Optional[Tuple[str, str, str]]:
-    """(etag, last modified, body) kept on disk for (url, accept), or None. An unreadable
-    or foreign file is a miss, never an error."""
+def _disk_get(key: Key) -> Optional[Tuple[str, str, str, float]]:
+    """(etag, last modified, body, when it was last read in full) kept on disk for (url,
+    accept), or None. An unreadable or foreign file is a miss, never an error; one that
+    does not say when it was read reads as read long ago."""
     if not CACHE_DIR:
         return None
     _tidy(os.path.join(CACHE_DIR, "http"))
@@ -159,12 +174,16 @@ def _disk_get(key: Key) -> Optional[Tuple[str, str, str]]:
     etag, modified, body = (entry.get(k) for k in ("etag", "last_modified", "body"))
     if not all(isinstance(x, str) for x in (etag, modified, body)) or not (etag or modified):
         return None
-    return etag, modified, body
+    fetched = entry.get("fetched")
+    real = isinstance(fetched, (int, float)) and not isinstance(fetched, bool) and math.isfinite(fetched)
+    return etag, modified, body, float(fetched) if real else 0.0
 
 
-def _disk_put(key: Key, etag: str, modified: str, body: str) -> None:
+def _disk_put(key: Key, etag: str, modified: str, body: str,
+              fetched: Optional[float] = None) -> None:
     if not CACHE_DIR:
         return
+    fetched = _now() if fetched is None else fetched
     folder = os.path.join(CACHE_DIR, "http")
     path = _cache_file(key)
     tmp = ""
@@ -173,7 +192,8 @@ def _disk_put(key: Key, etag: str, modified: str, body: str) -> None:
         fd, tmp = tempfile.mkstemp(dir=folder, suffix=".tmp")      # owner-only
         with os.fdopen(fd, "wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as fh:
             fh.write(json.dumps({"v": CACHE_FORMAT, "url": key[0], "accept": key[1],
-                                 "etag": etag, "last_modified": modified, "body": body},
+                                 "etag": etag, "last_modified": modified, "body": body,
+                                 "fetched": fetched},
                                 ensure_ascii=False).encode("utf-8"))
         grown = os.path.getsize(tmp)
         try:
@@ -206,7 +226,7 @@ def _tidy(folder: str, grown: int = 0) -> None:
         _TIDY[folder] = [prune(folder), now]
 
 
-def _touch(key: Key, etag: str, modified: str, body: str) -> None:
+def _touch(key: Key, etag: str, modified: str, body: str, fetched: float) -> None:
     """An answer asked for again counts as recent, so pruning keeps what is in use; one
     known only in memory (the folder was named after it was read) is written down."""
     if not CACHE_DIR:
@@ -215,7 +235,7 @@ def _touch(key: Key, etag: str, modified: str, body: str) -> None:
     try:
         os.utime(_cache_file(key))
     except OSError:
-        _disk_put(key, etag, modified, body)
+        _disk_put(key, etag, modified, body, fetched)
 
 
 def prune(folder: str, now: Optional[float] = None) -> int:
@@ -383,15 +403,17 @@ def request_raw(url: str, payload: Optional[dict] = None,
 
 
 def _kept_again(key: Key, cached: tuple) -> None:
-    """A kept answer a 304 sent back and that was read: recent again, in memory and on disk."""
-    _remember(key, cached[0], cached[2], cached[1])
+    """A kept answer a 304 sent back and that was read: recent again, in memory and on disk,
+    and still dated from when it was last read in full."""
+    _remember(key, cached[0], cached[2], cached[1], cached[3])
     _touch(key, *cached)
 
 
 def _keep(key: Key, etag: str, modified: str, body: str) -> None:
     """A new answer, kept to be asked about next time, in memory and on disk."""
-    _remember(key, etag, body, modified)
-    _disk_put(key, etag, modified, body)
+    fetched = _now()
+    _remember(key, etag, body, modified, fetched)
+    _disk_put(key, etag, modified, body, fetched)
 
 
 def _get(url: str, payload: Optional[dict] = None, accept: str = "*/*",
@@ -440,7 +462,7 @@ def _one(url: str, data, headers: dict, limit: int):
     headers = dict(headers)
     host = urllib.parse.urlsplit(url).netloc
     key = (url, headers.get("Accept", ""))
-    cached = None
+    cached, expired = None, False
     if data is None:                 # a POST is never answered from what was kept
         with _ETAG_LOCK:
             cached = _ETAGS.get(key)
@@ -451,6 +473,8 @@ def _one(url: str, data, headers: dict, limit: int):
         # same page under two limits is one answer whenever it fits both.)
         if cached and not _fits(cached[2], limit):
             cached = None
+        elif cached and not cached[0] and not 0 <= _now() - cached[3] < MODIFIED_MAX_AGE:
+            cached, expired = None, True     # read in full; see MODIFIED_MAX_AGE
     if cached:
         if cached[0]:
             headers["If-None-Match"] = cached[0]
@@ -472,7 +496,7 @@ def _one(url: str, data, headers: dict, limit: int):
                     keep = _validators(fh.headers) if data is None and whole else None
             if keep:
                 return body, None, None, None, (key, keep[0], keep[1], body)
-            if cached:
+            if cached or expired:
                 _forget(key)         # what was kept no longer describes this answer
             return body, None, None, None, None
         except urllib.error.HTTPError as e:

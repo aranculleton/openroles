@@ -38,8 +38,10 @@ def configure(user_agent: Optional[str] = None, robots_agents: Optional[Iterable
                       whose robots.txt says "Content-Signal: ai-input=no" is then read.
     cache_dir         a folder to keep each board's last answer in between runs, with the
                       ETag or Last-Modified date the board sent: the next run asks with
-                      them, and a board that has not changed answers 304 and sends nothing.
-                      Every read still asks the board; nothing is served without asking.
+                      them, and a board that has not changed answers 304 and sends nothing
+                      (one with only a Last-Modified date for a day after it was last read
+                      in full). Every read still asks the board; nothing is served without
+                      asking.
                       Off by default; False turns it off. Only GET answers that show they
                       arrived whole are kept, never one the host marks no-store, for 30
                       days unused, and about 500 MB of them: each process keeps the folder

@@ -106,7 +106,11 @@ openroles.configure(
 With `cache_dir`, each board's last answer is kept with the `ETag` or `Last-Modified` date
 the board sent, and the next run asks with them: a board that honours them and has not
 changed answers `304 Not Modified` and sends nothing, and the kept copy is read instead.
-Every read still asks the board. It is off by default. An answer is kept only when it is
+An answer that came with a `Last-Modified` date and no `ETag` is asked about that way for
+at most a day (`MODIFIED_MAX_AGE` in `openroles._http`, 24 hours) after it was last read
+in full, and then read in full once, so a host whose date does not move when its data
+does holds a board back a day at most; the same holds within one run, with or without a
+folder. Every read still asks the board. It is off by default. An answer is kept only when it is
 a GET, is not marked `no-store`, and shows that all of it arrived: all of its
 `Content-Length`, every chunk of a chunked answer, or a gzip stream to its end. One that
 gives no length and is neither chunked nor gzipped ends when the connection closes, cut

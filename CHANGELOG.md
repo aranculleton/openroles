@@ -59,7 +59,12 @@ found in two places, and careers sites read however they write their JSON-LD.
 ### Changed
 
 - **A host that sends `Last-Modified` and no `ETag` is asked with `If-Modified-Since`.**
-  Read twice in a process, it answers 304 and sends nothing, as one with an `ETag` did.
+  Read twice in a process, it answers 304 and sends nothing, as one with an `ETag` did. It
+  is asked that way for at most 24 hours (`MODIFIED_MAX_AGE` in `openroles._http`) after
+  its answer was last read in full, a 304 not counting, and then read in full once: a
+  host whose date does not move when its data does holds a board back a day at most,
+  in memory and in a `cache_dir` alike. An answer with an `ETag` is asked about however
+  old it is.
 
 ### Fixed
 

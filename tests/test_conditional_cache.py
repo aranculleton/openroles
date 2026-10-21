@@ -368,6 +368,88 @@ def test_a_chunked_answer_and_a_whole_gzip_stream_are_kept_with_no_length(monkey
     assert sent == [None, '"v1"', None, '"v1"'] and len(files(tmp_path)) == 2
 
 
+HOUR = 3600
+
+
+@pytest.mark.parametrize("folder", [False, True], ids=["in memory", "in a folder"])
+def test_a_last_modified_that_never_moves_holds_a_changed_board_back_a_day_at_most(
+        monkeypatch, tmp_path, folder):
+    """A host whose Last-Modified stays put while its data changes answers 304 to every
+    If-Modified-Since, and each 304 counts as recent use, so its kept copy was its answer
+    for good. Now it is asked that way only for MODIFIED_MAX_AGE after it was last read in
+    full: a 304 does not restart that, and the clock is moved rather than waited on."""
+    clock = [2_000_000_000.0]
+    monkeypatch.setattr(_http, "_now", lambda: clock[0])
+    board = {"body": b'{"jobs": [1]}'}
+    asked = []
+
+    def answer(handler, n):
+        asked.append(handler.headers.get("If-Modified-Since"))
+        if handler.headers.get("If-Modified-Since"):
+            handler.send_response(304)
+            handler.end_headers()
+            return
+        handler.send_response(200)
+        handler.send_header("Last-Modified", "Tue, 20 Oct 2026 09:00:00 GMT")
+        handler.send_header("Content-Length", str(len(board["body"])))
+        handler.end_headers()
+        handler.wfile.write(board["body"])
+    url, _sent, stop = local_board(monkeypatch, answer)
+    if folder:
+        openroles.configure(cache_dir=tmp_path)
+    seen = []
+    try:
+        for hours in (0, 1, 23, 24, 25):
+            clock[0] = 2_000_000_000.0 + hours * HOUR
+            if folder:
+                new_process(monkeypatch)                        # a run of its own
+            seen.append(_http.request(url)[0]["jobs"])
+            board["body"] = b'{"jobs": [2]}'                    # the data moves, the date does not
+    finally:
+        stop()
+    assert seen == [[1], [1], [1], [2], [2]]
+    assert [bool(x) for x in asked] == [False, True, True, False, True]
+    assert _http.MODIFIED_MAX_AGE == 24 * HOUR
+
+
+def test_an_answer_with_an_etag_is_asked_about_however_old_it_is(monkeypatch, tmp_path):
+    clock = [2_000_000_000.0]
+    monkeypatch.setattr(_http, "_now", lambda: clock[0])
+    openroles.configure(cache_dir=tmp_path)
+    modified = "Tue, 20 Oct 2026 09:00:00 GMT"
+    board = Board(monkeypatch, headers={"ETag": '"v1"', "Last-Modified": modified})
+    _http.request(URL)
+    clock[0] += 30 * 24 * HOUR
+    new_process(monkeypatch)
+    assert _http.request(URL) == ({"jobs": [1]}, None)
+    assert board.sent[-1] == ('"v1"', modified)
+
+
+def test_a_kept_file_that_does_not_say_when_it_was_read_is_read_in_full(monkeypatch, tmp_path):
+    """A file a build before this one wrote carries no date of its own."""
+    openroles.configure(cache_dir=tmp_path)
+    modified = "Tue, 20 Oct 2026 09:00:00 GMT"
+    board = Board(monkeypatch, headers={"Last-Modified": modified})
+    _http.request(URL)
+    [kept] = files(tmp_path)
+    with gzip.open(kept, "rt", encoding="utf-8") as fh:
+        entry = json.load(fh)
+    for undated in (None, True, "yesterday", float("nan")):
+        entry.pop("fetched")
+        if undated is not None:
+            entry["fetched"] = undated
+        with gzip.open(kept, "wt", encoding="utf-8") as fh:
+            json.dump(entry, fh)
+        new_process(monkeypatch)
+        assert _http.request(URL) == ({"jobs": [1]}, None)
+        assert board.sent[-1] == (None, None)
+        with gzip.open(kept, "rt", encoding="utf-8") as fh:
+            entry = json.load(fh)
+    new_process(monkeypatch)
+    _http.request(URL)
+    assert board.sent[-1] == (None, modified)                  # dated again, so asked about
+
+
 def test_a_kept_answer_a_304_sends_back_that_is_not_json_is_read_afresh(monkeypatch, tmp_path):
     """A damaged kept copy would otherwise be served on every 304 until the board changed."""
     openroles.configure(cache_dir=tmp_path)
@@ -553,7 +635,7 @@ def test_memory_keeps_to_its_cap_counting_each_body_once(monkeypatch):
     assert list(_http._ETAGS) == [b, c]
     _http._remember(d, '"v1"', "w" * 20)                # 110: the oldest goes
     assert list(_http._ETAGS) == [c, d]
-    assert sum(len(v[-1]) for v in _http._ETAGS.values()) <= 100
+    assert sum(len(v[2]) for v in _http._ETAGS.values()) <= 100
 
 
 # ------------------------------------------------------------------ what the caller asked for

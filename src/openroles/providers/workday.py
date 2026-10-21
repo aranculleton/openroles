@@ -40,6 +40,10 @@ _MORE = re.compile(r" and \d+ more$")
 # A posting's path inside its board, and nothing else. It comes from the listing's
 # structured `externalPath`, and anything that could point elsewhere is refused.
 _PATH = re.compile(r"^/job/[^\s?#\\]+$")
+# What a posting's address leaves as it is when it writes the listing's path: everything
+# else is percent-encoded, and a "%" stays, so a path the listing sends already encoded
+# keeps its escapes.
+PATH_SAFE = "/-_.~%"
 _POSTED = re.compile(r"posted\s+(today|yesterday|(\d+)(\+)?\s+days?\s+ago)", re.I)
 
 Details = Union[bool, Callable[[Job], bool]]
@@ -214,7 +218,7 @@ class WorkdayBoard:
         return self.call(f"{self.api}{quote(path, safe='/-_.~%')}")
 
     def public_url(self, path: str) -> str:
-        return f"https://{self.host}/{self.site}{quote(path, safe='/-_.~%')}"
+        return f"https://{self.host}/{self.site}{quote(path, safe=PATH_SAFE)}"
 
     # -------------------------------------------------------------- listing
 
@@ -320,9 +324,10 @@ class WorkdayBoard:
         where = where or primary
         remote = clean(posting.get("remoteType")).lower()
         return Job(
-            # Decoded, as job_id() decodes the posting's address: a path that came
-            # percent-encoded and one that did not are one posting.
-            id=f"wd-{self.tenant}-{unquote(path.rsplit('/', 1)[-1])}",
+            # The path's last segment as the listing sends it, exactly as 0.2.0 gave it: an
+            # id a caller has stored must not change under them. job_id() reads it back
+            # from the posting's address (see ids._workday_segment).
+            id=f"wd-{self.tenant}-{path.rsplit('/', 1)[-1]}",
             ats="workday",
             board=self.token,
             title=title,
@@ -362,7 +367,18 @@ class WorkdayBoard:
 
 def _valid(path) -> bool:
     return (isinstance(path, str) and bool(_PATH.match(path))
-            and ".." not in path and "//" not in path)
+            and ".." not in path and "//" not in path and _writable(path))
+
+
+def _writable(path: str) -> bool:
+    """Whether the path can be written into an address at all: JSON can carry a lone
+    surrogate ("\\ud800"), which has no UTF-8, and its posting raised UnicodeEncodeError
+    out of fetch()."""
+    try:
+        path.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _log():

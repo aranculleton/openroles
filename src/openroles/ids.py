@@ -11,7 +11,7 @@ unmatched only shows twice.
 from __future__ import annotations
 
 import re
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from .providers import workday
 
@@ -74,9 +74,33 @@ def _workday(url: str, host: str, path: str) -> str:
         rest = rest[:[p.lower() for p in rest].index("apply")]
     if not rest or "_" not in rest[-1]:
         return ""
-    # The reader builds the id from the posting's path decoded, and its address is that
-    # path percent-encoded ("&" is %26, "ü" %C3%BC), so the segment is decoded here too.
-    return f"wd-{m['tenant'].lower()}-{unquote(rest[-1])}"
+    segment = _workday_segment(rest[-1])
+    return f"wd-{m['tenant'].lower()}-{segment}" if segment else ""
+
+
+def _workday_segment(segment: str) -> str:
+    """The id part of a Workday posting from the last segment of its address.
+
+    The reader's id is the segment as the board's listing sends it, and the posting's
+    address is that path with what workday.PATH_SAFE does not list percent-encoded and
+    any "%" left as it is ("&" is %26, "ü" %C3%BC). So the segment is first written that
+    way, which makes a link copied with a raw "ü" or "&" the reader's own address, and
+    then decoded wherever the reader would have written exactly this from the decoded
+    text. Where it would not (an escape it never writes, such as %2F or %25, or bytes that
+    are not UTF-8), the listing sent the path with its escapes, and they are the id.
+
+    One case cannot be told from the address: a listing that sends "M%C3%BCnchen" and
+    one that sends "München" give the same address, and it is read as the second. A "/"
+    never comes out of decoding, and bytes that are not UTF-8 never become U+FFFD."""
+    try:
+        written = quote(segment, safe=workday.PATH_SAFE)
+    except UnicodeEncodeError:              # a lone surrogate: no address has one
+        return ""
+    try:
+        text = unquote(written, errors="strict")
+    except UnicodeDecodeError:
+        return written
+    return text if quote(text, safe=workday.PATH_SAFE) == written else written
 
 
 def job_id(url: str) -> str:

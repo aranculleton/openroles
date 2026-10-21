@@ -114,19 +114,61 @@ def test_an_address_with_two_ids_that_disagree_gives_none(url):
 
 
 def test_a_workday_posting_whose_path_needs_encoding_gives_back_its_own_id(web):
-    listing = {"total": 4, "facets": [], "jobPostings": [
+    """The address percent-encodes the path ("&" is %26, "ü" %C3%BC); the id keeps the path
+    as the listing sends it, as 0.2.0 did."""
+    listing = {"total": 3, "facets": [], "jobPostings": [
         {"title": "Pricing", "externalPath": "/job/London/Pricing-&-Revenue-Analyst_R5",
          "locationsText": "London"},
         {"title": "Analista", "externalPath": "/job/São-Paulo/Analista-de-Precificação_R4",
          "locationsText": "São Paulo"},
-        {"title": "Datenanalyst", "externalPath": "/job/M%C3%BCnchen/Datenanalyst-M%C3%BCnchen_R3",
-         "locationsText": "München"},
         {"title": "Planner", "externalPath": "/job/Leeds/Planner-(Fixed-Term)_R6",
          "locationsText": "Leeds"},
     ]}
     web.routes["/wday/cxs/acme/External/jobs"] = listing
     jobs = workday.fetch("acme.wd3/External", today=dt.date(2026, 10, 15))
-    assert len(jobs) == 4
+    assert len(jobs) == 3
     assert [openroles.job_id(j.url) for j in jobs] == [j.id for j in jobs]
-    assert jobs[0].id == "wd-acme-Pricing-&-Revenue-Analyst_R5"          # as 0.2.0 gave it
-    assert jobs[2].id == "wd-acme-Datenanalyst-München_R3"
+    assert jobs[0].id == "wd-acme-Pricing-&-Revenue-Analyst_R5"
+    # A link written with the characters themselves is the same address.
+    assert openroles.job_id("https://acme.wd3.myworkdayjobs.com/External/job/S%C3%A3o-Paulo/"
+                            "Analista-de-Precificação_R4") == jobs[1].id
+
+
+# The id 0.2.0 gave each of these, which a caller may have stored.
+WORKDAY_0_2_0 = [
+    ("/job/M%C3%BCnchen/Datenanalyst-M%C3%BCnchen_R3", "wd-acme-Datenanalyst-M%C3%BCnchen_R3"),
+    ("/job/London/Pricing-&-Revenue-Analyst_R5", "wd-acme-Pricing-&-Revenue-Analyst_R5"),
+    ("/job/X/Save-10%AB_R7", "wd-acme-Save-10%AB_R7"),
+    ("/job/X/Data%2FAnalytics_R8", "wd-acme-Data%2FAnalytics_R8"),
+    ("/job/X/a%25b_R9", "wd-acme-a%25b_R9"),
+    ("/job/Toronto-ON/Senior-Data-Analyst_R-123456", "wd-acme-Senior-Data-Analyst_R-123456"),
+]
+
+
+def test_a_workday_id_is_what_0_2_0_gave_whatever_the_path_holds(web):
+    """A path that arrived percent-encoded was decoded into the id for a while, so a stored
+    id changed, a broken escape became U+FFFD and %2F put a "/" inside the id."""
+    web.routes["/wday/cxs/acme/External/jobs"] = {"total": len(WORKDAY_0_2_0), "facets": [], "jobPostings": [
+        {"title": f"Role {n}", "externalPath": path, "locationsText": "X"}
+        for n, (path, _) in enumerate(WORKDAY_0_2_0)]}
+    jobs = workday.fetch("acme.wd3/External", today=dt.date(2026, 10, 15))
+    assert [j.id for j in jobs] == [want for _, want in WORKDAY_0_2_0]
+    # Escapes an address never writes for a character show the listing sent them, so
+    # these read back too.
+    assert [openroles.job_id(j.url) for j in jobs[2:]] == [j.id for j in jobs[2:]]
+    # The one address that cannot be told apart: a listing that sends "München" gives the
+    # same one, and that is how it reads.
+    assert openroles.job_id(jobs[0].url) == "wd-acme-Datenanalyst-München_R3"
+
+
+def test_a_workday_path_no_address_can_hold_is_left_out_not_an_exception(web):
+    """JSON can carry a lone surrogate, which has no UTF-8: writing its address raised
+    UnicodeEncodeError out of fetch()."""
+    import json
+    web.routes["/wday/cxs/acme/External/jobs"] = json.loads(
+        '{"total": 2, "facets": [], "jobPostings": ['
+        '{"title": "Odd", "externalPath": "/job/X/Odd-\\ud800_R1", "locationsText": "X"},'
+        '{"title": "Planner", "externalPath": "/job/X/Planner_R2", "locationsText": "X"}]}')
+    jobs = workday.fetch("acme.wd3/External", today=dt.date(2026, 10, 15))
+    assert [j.id for j in jobs] == ["wd-acme-Planner_R2"]
+    assert openroles.job_id("https://acme.wd3.myworkdayjobs.com/External/job/X/Odd-\ud800_R1") == ""

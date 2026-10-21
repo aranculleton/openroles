@@ -4,6 +4,13 @@
 
 ### New
 
+- **A board that has not changed since the last run sends nothing.** With
+  `openroles.configure(cache_dir=...)` (CLI `--cache DIR`), each board's last answer is
+  kept with the `ETag` or `Last-Modified` date it came with, and the next run asks with
+  them; Greenhouse and Lever, among others, answer `304 Not Modified`. Every read still
+  asks the board. Off by default. Only GET answers are kept, never one marked `no-store`
+  or cut at the size limit, in owner-only files named for a hash of the address, at most
+  500 MB and for 30 days unused.
 - **`openroles.job_id(url)` gives a posting's id from its address alone.** The same `Job.id`
   a board read gives it, so a posting found on a job site whose link goes to the employer's
   board can be matched to the copy read from that board, with nothing fetched. Greenhouse
@@ -17,6 +24,11 @@
   Ashby's equity and bonus are not salary, and Ashby tiers in different currencies give
   no figures rather than a band that mixes them. A figure that could be misread, such as
   "48.000", is left out.
+
+### Changed
+
+- **A host that sends `Last-Modified` and no `ETag` is asked with `If-Modified-Since`.**
+  Read twice in a process, it answers 304 and sends nothing, as one with an `ETag` did.
 
 ### Fixed
 

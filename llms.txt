@@ -27,6 +27,6 @@ id, ats, board, title, url, location, locations, workplace ("remote"/"hybrid"/"o
 - `query` words must all appear in the title. Workday also searches the board with them; a careersite skips job pages whose address names another job.
 - Workday, Rippling and Polymer descriptions cost one request each: pass `details=True` (CLI `--details`) or a query.
 - Ashby's `posted` is when the posting was last published; Ashby publishes no first-posted date.
-- Embedding: `openroles.configure(user_agent=..., robots_agents=[...])` once at start-up.
+- Embedding: `openroles.configure(user_agent=..., robots_agents=[...])` once at start-up. `cache_dir=PATH` (CLI `--cache DIR`) keeps each board's last answer between runs and asks with its ETag or Last-Modified, so an unchanged board answers 304 and sends nothing; off by default.
 - Errors: `BoardError` (wrong token, no answer), `RobotsDisallowed` (robots.txt says no, or asks not to be AI input).
 - Polite: robots.txt honoured, Crawl-delay kept, two requests per host at a time, stops on 429/503.

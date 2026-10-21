@@ -55,6 +55,7 @@ openroles hosts greenhouse:figma lever:zoox         # the hosts to allow in a ne
 openroles personio:acme                            # any system, as ats:token
 openroles careersite:careers.acme.example          # a careers site with no job API
 openroles linear --json > roles.json               # JSON (the default when piped), or --jsonl
+openroles linear --cache ~/.cache/openroles        # an unchanged board sends nothing next run
 ```
 
 ## Python
@@ -95,8 +96,15 @@ openroles is a library first: the CLI and the MCP server are thin layers over `f
 openroles.configure(
     user_agent="acme-jobs/1.0 (+https://acme.example/contact)",  # sent with every request
     robots_agents=["acme-jobs"],   # a Disallow for your agent stops a read too
+    cache_dir="~/.cache/acme-jobs/openroles",   # optional: keep answers between runs
 )
 ```
+
+With `cache_dir`, each board's last answer is kept with the `ETag` or `Last-Modified` date
+the board sent, and the next run asks with them: a board that has not changed answers
+`304 Not Modified` and sends nothing, and the kept copy is read instead. Every read still
+asks the board. It is off by default; only GET answers are kept, never one marked
+`no-store`, in owner-only files, at most 500 MB and for 30 days unused.
 
 Everything a search decides for itself stays a parameter: `query`, `location`, `remote`,
 `since_days`, `country`, and `details`, which can be a function that says which postings
@@ -217,8 +225,8 @@ publishes an open board its own terms and robots.txt allow.
 - **A host's `Crawl-delay` is kept** between requests once its robots.txt is read (Lever
   asks for one second), and a robots.txt is read again after a day, as RFC 9309 asks.
 - **At most two requests in flight per host**, a timeout on every call, gzip on the wire,
-  conditional requests (`ETag`) for anything read twice in a run, and an honest
-  `User-Agent` naming this project.
+  conditional requests (`ETag` and `Last-Modified`) for anything read twice in a run, and
+  across runs with a cache folder, and an honest `User-Agent` naming this project.
 - **XML that declares a DTD or entities is never parsed**, so a hostile feed cannot expand.
 - **A board that answers 429 or 503 is left alone** for the rest of the run, and a
   documented rate limit (Rippling's 100 requests in 10 minutes) is kept below.

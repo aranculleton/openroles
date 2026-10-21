@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed
+
+- **A careers site's job page is read even when its JSON-LD is not strictly valid JSON.**
+  A description pasted with its line breaks left a raw newline inside a JSON string, which
+  a strict reader refused, so the page read as having no `JobPosting`. Also read now: a
+  `type` written without quotes, a script wrapped in comment or CDATA lines, one
+  entity-encoded as a whole, and a stray semicolon after it. The cases are the ones
+  extruct's JSON-LD reader handles (BSD-3-Clause), written afresh.
+
 ## 0.2.0 (2026-10-19)
 
 Eleven more hiring systems, careers sites with no job API, and a library any application

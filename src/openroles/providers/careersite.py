@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import html as _html
 import json
 import re
 from typing import Callable, Iterable, List, Optional, Tuple
@@ -34,7 +35,12 @@ MAX_SITEMAPS = 20       # sitemap files followed from an index
 # What a job page's address looks like on the systems this has been checked against:
 # /job/..., /jobs/123, /careers/job/..., /JobDetail/...
 JOB_PATH = re.compile(r"/(?:jobs?|jobdetail|vacanc(?:y|ies)|positions?|openings?)(?:/|-|$)", re.I)
-_LD = re.compile(r"<script[^>]+type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>", re.I | re.S)
+# The type may be quoted or not: HTML allows type=application/ld+json, and minified pages
+# write it that way.
+_LD = re.compile(r"<script\b[^>]*?\btype\s*=\s*[\"']?application/ld\+json\b[\"']?[^>]*>(.*?)</script>",
+                 re.I | re.S)
+# Lines some pages wrap a script in to hide it from older parsers: comment and CDATA markers.
+_FRAMING = re.compile(r"//|/\*|\*/|<!--|--!?>|<!\[CDATA\[|\]\]>|\s+")
 
 
 def site_of(token: str) -> Tuple[str, str]:
@@ -134,16 +140,58 @@ def _lower(obj):
     return obj
 
 
+def _unframed(text: str) -> str:
+    """The script without the comment or CDATA lines at either end."""
+    lines = text.split("\n")
+    while lines and not _FRAMING.sub("", lines[0]):
+        lines.pop(0)
+    while lines and not _FRAMING.sub("", lines[-1]):
+        lines.pop()
+    return "\n".join(lines)
+
+
+def _leading(text: str) -> list:
+    """Every complete JSON value `text` starts with, in order; what follows the last is
+    left (a stray semicolon or brace)."""
+    decoder = json.JSONDecoder(strict=False)
+    out, i = [], 0
+    while True:
+        while i < len(text) and text[i] in " \t\r\n;":
+            i += 1
+        if i >= len(text):
+            return out
+        try:
+            value, i = decoder.raw_decode(text, i)
+        except ValueError:
+            return out
+        out.append(value)
+
+
+def json_values(block: str) -> list:
+    """The JSON in one JSON-LD script, read the way careers sites actually write it.
+
+    A strict reader lost whole sites: a description pasted with its line breaks puts a
+    raw newline inside a JSON string, which strict JSON refuses, so the page read as
+    having no JobPosting. Also read: a script wrapped in comment or CDATA lines, one
+    HTML-entity-encoded as a whole, and junk after a complete value. Nothing is guessed
+    beyond that; a script still unreadable gives nothing. The cases are the ones
+    extruct's JSON-LD reader handles (scrapinghub/extruct, BSD-3-Clause), written afresh.
+    """
+    text = block.strip()
+    for attempt in (text, _unframed(text)):
+        found = _leading(attempt)
+        if found:
+            return found
+    unescaped = _html.unescape(_unframed(text))
+    return _leading(unescaped) if unescaped != _unframed(text) else []
+
+
 def postings(html: str) -> List[dict]:
     """Every schema.org JobPosting in a page's JSON-LD, keys lower-cased (some sites write
     "DatePosted")."""
     out = []
     for block in _LD.findall(html or ""):
-        try:
-            data = json.loads(block.strip())
-        except ValueError:
-            continue
-        stack = [_lower(data)]
+        stack = [_lower(data) for data in json_values(block)]
         while stack:
             node = stack.pop()
             if isinstance(node, list):

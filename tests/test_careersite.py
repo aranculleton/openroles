@@ -1,5 +1,6 @@
 """Any careers site that publishes its jobs for search engines, read from its sitemap and
 each page's JobPosting. An invented site, careers.acme.example."""
+import html
 import json
 
 import pytest
@@ -116,3 +117,43 @@ def test_fetch_reads_a_careers_site_named_as_one(web):
     site(web)
     jobs = openroles.fetch(f"careersite:{HOST}", query="pricing analyst")
     assert [j.title for j in jobs] == ["Pricing Analyst"]
+
+
+PLANNER = '{"@type": "JobPosting", "title": "Demand Planner", "description": "Plan the week.\nForecast the month."}'
+# The same posting as strictly valid JSON, so each case below fails on its own fault alone.
+FLAT = PLANNER.replace("\n", " ")
+
+
+@pytest.mark.parametrize("why,script", [
+    ("a line break inside a string", f'<script type="application/ld+json">{PLANNER}</script>'),
+    ("a type written without quotes", f"<script type=application/ld+json>{FLAT}</script>"),
+    ("other attributes around the type", f"<script id=jp type='application/ld+json' nonce=x>{FLAT}</script>"),
+    ("comment lines around it", f'<script type="application/ld+json">\n<!--\n{FLAT}\n-->\n</script>'),
+    ("CDATA lines around it", f'<script type="application/ld+json">\n//<![CDATA[\n{FLAT}\n//]]>\n</script>'),
+    ("the whole script entity-encoded", f'<script type="application/ld+json">{html.escape(FLAT)}</script>'),
+    ("a semicolon after it", f'<script type="application/ld+json">{FLAT};</script>'),
+])
+def test_a_jobposting_is_read_however_the_page_writes_its_script(why, script):
+    """A strict JSON reader found no posting on any of these pages, so the site read as
+    having none."""
+    found = careersite.postings(f"<html><head>{script}</head></html>")
+    assert [p["title"] for p in found] == ["Demand Planner"], why
+    assert found[0]["description"].startswith("Plan the week."), why
+
+
+def test_a_script_that_is_not_a_jobposting_still_gives_nothing():
+    for script in ('<script type="application/ld+json">{"@type": "JobPosting", "title": </script>',
+                   '<script type="application/ld+jsonp">' + PLANNER + "</script>",
+                   '<script type="text/javascript">var j = ' + PLANNER + "</script>",
+                   '<script type="application/ld+json">not json</script>'):
+        assert careersite.postings(script) == [], script
+
+
+def test_a_page_whose_description_keeps_its_line_breaks_is_a_role(web):
+    site(web)
+    lead = PLANNER.replace("Demand Planner", "Planning Lead")
+    web.routes["P-103"] = (f'<script type="application/ld+json">{lead}</script>', None)
+    report: dict = {}
+    jobs = {j.title: j for j in careersite.fetch(HOST, report=report)}
+    assert jobs["Planning Lead"].description == "Plan the week.\nForecast the month."
+    assert report["page_errors"] == {}

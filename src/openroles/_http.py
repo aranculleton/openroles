@@ -53,21 +53,38 @@ ETAG_BYTES = 32_000_000
 _ETAGS: OrderedDict = OrderedDict()   # (url, accept) -> (etag, last modified, body), oldest first
 _ETAG_LOCK = threading.Lock()
 Key = Tuple[str, str]
+# The characters the kept bodies hold, and the store that total is for. A running total:
+# adding every body up again on each insert made a run of n answers cost n squared. A store
+# put in _ETAGS's place (a fresh process in a test) is counted once, the first time.
+_HELD: list = [None, 0]
+
+
+def _held() -> int:
+    if _HELD[0] is not _ETAGS:
+        _HELD[:] = [_ETAGS, sum(len(entry[-1]) for entry in _ETAGS.values())]
+    return _HELD[1]
 
 
 def _remember(key: Key, etag: str, body: str, modified: str = "") -> None:
     with _ETAG_LOCK:
-        _ETAGS.pop(key, None)
+        size = _held()
+        old = _ETAGS.pop(key, None)
+        if old is not None:
+            size -= len(old[-1])
         _ETAGS[key] = (etag, modified, body)
-        size = sum(len(entry[-1]) for entry in _ETAGS.values())
+        size += len(body)
         while _ETAGS and size > ETAG_BYTES:
             _, gone = _ETAGS.popitem(last=False)
             size -= len(gone[-1])
+        _HELD[1] = size
 
 
 def _forget(key: Key) -> None:
     with _ETAG_LOCK:
-        _ETAGS.pop(key, None)
+        size = _held()
+        old = _ETAGS.pop(key, None)
+        if old is not None:
+            _HELD[1] = size - len(old[-1])
     if CACHE_DIR:
         try:
             os.remove(_cache_file(key))

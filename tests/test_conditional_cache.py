@@ -392,6 +392,38 @@ def test_a_run_of_only_304s_still_keeps_the_folder_to_its_caps(monkeypatch, tmp_
     assert len(files(tmp_path)) == 2                            # the one in use, and the newest
 
 
+# ------------------------------------------------------------------ in memory
+
+def test_keeping_an_answer_does_not_add_up_every_kept_one_again(monkeypatch):
+    """Each insert added up every body already kept, so a run of n answers cost n squared:
+    20,000 answers of 1 kB took 40 seconds."""
+    looked = [0]
+
+    class Body(str):
+        def __len__(self):
+            looked[0] += 1
+            return str.__len__(self)
+    for i in range(1_000):
+        _http._remember((f"{URL}?page={i}", "application/json"), '"v1"', Body("x" * 10))
+    assert len(_http._ETAGS) == 1_000
+    assert looked[0] <= 3 * 1_000          # a look or two at each body, not one per insert
+
+
+def test_memory_keeps_to_its_cap_counting_each_body_once(monkeypatch):
+    monkeypatch.setattr(_http, "ETAG_BYTES", 100)
+    a, b, c, d = ((f"{URL}?{n}", "application/json") for n in "abcd")
+    for _ in range(5):
+        _http._remember(a, '"v1"', "x" * 60)          # the same answer again is not more of it
+    _http._remember(b, '"v1"', "y" * 30)
+    assert list(_http._ETAGS) == [a, b]
+    _http._forget(a)
+    _http._remember(c, '"v1"', "z" * 60)
+    assert list(_http._ETAGS) == [b, c]
+    _http._remember(d, '"v1"', "w" * 20)                # 110: the oldest goes
+    assert list(_http._ETAGS) == [c, d]
+    assert sum(len(v[-1]) for v in _http._ETAGS.values()) <= 100
+
+
 # ------------------------------------------------------------------ what the caller asked for
 
 def test_a_kept_body_longer_than_the_caller_s_limit_is_not_what_it_gets(monkeypatch, tmp_path):

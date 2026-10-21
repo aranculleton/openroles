@@ -60,25 +60,34 @@ def _place(loc: dict) -> str:
     return ", ".join(x for x in parts if x) or clean(loc.get("name"))
 
 
-def _pay(detail: dict) -> str:
-    for r in detail.get("payRangeDetails") or []:
+def _range(detail: dict) -> dict:
+    """The posting's first pay range that gives a figure, or {}. The field is a list;
+    anything else (a number, true) is no range, never a reason to lose the board."""
+    ranges = detail.get("payRangeDetails")
+    for r in ranges if isinstance(ranges, list) else []:
         if isinstance(r, dict) and (r.get("rangeStart") is not None or r.get("rangeEnd") is not None):
-            def num(v):
-                try:
-                    return f"{v:,.0f}" if isinstance(v, (int, float)) else clean(v)
-                except OverflowError:
-                    return clean(v)
-            span = "-".join(num(v) for v in (r.get("rangeStart"), r.get("rangeEnd")) if v is not None)
-            return clean(f"{r.get('currency') or ''} {span} {clean(r.get('frequency')).lower().replace('_', ' ')}")
-    return ""
+            return r
+    return {}
+
+
+def _pay(detail: dict) -> str:
+    r = _range(detail)
+    if not r:
+        return ""
+
+    def num(v):
+        try:
+            return f"{v:,.0f}" if isinstance(v, (int, float)) else clean(v)
+        except OverflowError:
+            return clean(v)
+    span = "-".join(num(v) for v in (r.get("rangeStart"), r.get("rangeEnd")) if v is not None)
+    return clean(f"{r.get('currency') or ''} {span} {clean(r.get('frequency')).lower().replace('_', ' ')}")
 
 
 def _salary(detail: dict) -> dict:
     """The same range `_pay` words: the first with a figure."""
-    for r in detail.get("payRangeDetails") or []:
-        if isinstance(r, dict) and (r.get("rangeStart") is not None or r.get("rangeEnd") is not None):
-            return pay(r.get("rangeStart"), r.get("rangeEnd"), r.get("currency"), r.get("frequency"))
-    return pay()
+    r = _range(detail)
+    return pay(r.get("rangeStart"), r.get("rangeEnd"), r.get("currency"), r.get("frequency")) if r else pay()
 
 
 def fetch(token: str, details: Details = False, report: Optional[dict] = None) -> List[Job]:

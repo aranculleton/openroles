@@ -19,7 +19,7 @@ from typing import Callable, Iterable, List, Optional, Tuple, Union
 from .models import ATS, Board, BoardError, Job, RobotsDisallowed
 
 __all__ = ["ATS", "Board", "BoardError", "Job", "RobotsDisallowed", "__version__",
-           "configure", "detect", "fetch", "hosts", "robots_allows"]
+           "configure", "detect", "fetch", "hosts", "job_id", "robots_allows"]
 
 
 def configure(user_agent: Optional[str] = None, robots_agents: Optional[Iterable[str]] = None,
@@ -53,6 +53,16 @@ def robots_allows(host: str, paths: Iterable[str]) -> Tuple[bool, str]:
     allow every path for every agent `configure` names."""
     from . import _http
     return _http.robots_allows(host, list(paths))
+
+
+def job_id(url: str) -> str:
+    """The `Job.id` openroles gives the posting at `url`, from the address alone, or "".
+
+    For matching one posting found in two places: read from the employer's board, and
+    linked from a job site. Greenhouse, Lever, Ashby, Rippling, Workable, Personio and
+    Workday addresses; nothing is fetched."""
+    from .ids import job_id as _job_id
+    return _job_id(url)
 
 
 def detect(target: str) -> List[Board]:

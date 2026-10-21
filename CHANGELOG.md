@@ -4,6 +4,12 @@
 
 ### New
 
+- **`openroles.job_id(url)` gives a posting's id from its address alone.** The same `Job.id`
+  a board read gives it, so a posting found on a job site whose link goes to the employer's
+  board can be matched to the copy read from that board, with nothing fetched. Greenhouse
+  (its boards, its application form and any page with `gh_jid`), Lever, Ashby, Rippling,
+  Workable, Personio and Workday. An address that does not carry the system's own id gives
+  "", never a guess.
 - **The posted pay band as numbers: `salary_min`, `salary_max`, `salary_currency` and
   `salary_period`.** Filled only where the board publishes its pay as numbers (Lever,
   Ashby, Recruitee, Rippling, ClearCompany and careers sites' schema.org `baseSalary`),

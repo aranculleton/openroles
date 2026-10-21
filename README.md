@@ -73,7 +73,15 @@ job.to_dict()   # plain JSON-ready dict
 
 openroles.hosts("personio:acme")
 # ['acme.jobs.personio.de', 'acme.jobs.personio.com']: what a firewall must allow
+
+openroles.job_id("https://www.acme.example/careers/?gh_jid=4012345")
+# 'gh-4012345': the same id fetch() gives that posting, from its address alone
 ```
+
+`job_id` is for matching one posting found in two places, read from the employer's board
+and linked from a job site. It reads Greenhouse (any page with `gh_jid` too), Lever,
+Ashby, Rippling, Workable, Personio and Workday addresses, fetches nothing, and gives ""
+for an address that does not carry the system's own posting id.
 
 `fetch()` raises `openroles.BoardError` when a board cannot be read (a wrong token, no
 answer), and `openroles.RobotsDisallowed` when the host's robots.txt says no.

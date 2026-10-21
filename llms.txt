@@ -7,6 +7,7 @@
 - CLI: `openroles <company | careers URL | board URL | ats:token> [--query WORDS] [--location TEXT] [--remote] [--since DAYS] [--limit N] [--country NAME] [--details] [--json]`
 - Find the board: `openroles detect <company or URL>` prints `ats:token` lines.
 - Network allowlist: `openroles hosts <target>...` (Python `openroles.hosts(target)`) prints the hosts a board's reading calls, fetching nothing for `ats:token`.
+- Same posting, two places: `openroles.job_id(url)` gives the `Job.id` a board read gives the posting at that address (Greenhouse, Lever, Ashby, Rippling, Workable, Personio, Workday), or ""; nothing is fetched.
 - Python: `openroles.fetch(target, query=None, location=None, remote=None, since_days=None, limit=None, details=None, country="")` returns a list of `Job`; `openroles.detect(target)` returns a list of `Board`.
 - MCP: `openroles mcp` (stdio). Tools: `find_job_board(target)`, `list_open_roles(target, query?, location?, remote_only?, since_days?, limit?, include_descriptions?, country?)`.
 

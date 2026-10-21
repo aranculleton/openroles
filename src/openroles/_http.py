@@ -148,13 +148,15 @@ def _disk_put(url: str, etag: str, modified: str, body: str) -> None:
         prune(folder)
 
 
-def _touch(url: str) -> None:
-    """An answer asked for again counts as recent, so pruning keeps what is in use."""
-    if CACHE_DIR:
-        try:
-            os.utime(_cache_file(url))
-        except OSError:
-            pass
+def _touch(url: str, etag: str, modified: str, body: str) -> None:
+    """An answer asked for again counts as recent, so pruning keeps what is in use; one
+    known only in memory (the folder was named after it was read) is written down."""
+    if not CACHE_DIR:
+        return
+    try:
+        os.utime(_cache_file(url))
+    except OSError:
+        _disk_put(url, etag, modified, body)
 
 
 def prune(folder: str, now: Optional[float] = None) -> None:
@@ -323,7 +325,7 @@ def _one(url: str, data, headers: dict, limit: int):
         except urllib.error.HTTPError as e:
             if e.code == 304 and cached:
                 _remember(url, cached[0], cached[2], cached[1])
-                _touch(url)
+                _touch(url, *cached)
                 return cached[2], None, None
             if e.code in REDIRECTS and e.headers and e.headers.get("Location"):
                 return "", None, (urllib.parse.urljoin(url, e.headers["Location"]), e.code)

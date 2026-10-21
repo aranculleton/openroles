@@ -83,6 +83,16 @@ def test_a_named_folder_keeps_the_answer_for_the_next_run(monkeypatch, tmp_path)
     assert board.sent == [(None, None), ('"v1"', None)]
 
 
+def test_a_folder_named_after_a_read_is_given_that_answer(monkeypatch, tmp_path):
+    board = Board(monkeypatch)
+    _http.request(URL)
+    openroles.configure(cache_dir=tmp_path)
+    _http.request(URL)                                         # 304, from memory
+    new_process(monkeypatch)
+    assert _http.request(URL) == ({"jobs": [1]}, None)
+    assert board.sent == [(None, None), ('"v1"', None), ('"v1"', None)]
+
+
 def test_a_changed_board_replaces_what_was_kept(monkeypatch, tmp_path):
     openroles.configure(cache_dir=tmp_path)
     board = Board(monkeypatch)

@@ -8,7 +8,7 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, amount, clean, html_to_text, iso_day, pay, period_of, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, amount, clean, html_to_text, iso_day, pay, period_of, span, workplace_of
 
 HOST = "api.ashbyhq.com"
 URL = "https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true"
@@ -78,8 +78,9 @@ def _salary(job: dict) -> dict:
               period_of(c.get("interval")) or clean(c.get("interval")).lower()) for c in parts}
     if len(kinds) != 1:
         return pay()
-    lows = [x for x in (amount(c.get("minValue")) for c in parts) if x is not None]
-    highs = [x for x in (amount(c.get("maxValue")) for c in parts) if x is not None]
+    spans = [span(c.get("minValue"), c.get("maxValue")) for c in parts]     # each in order first
+    lows = [lo for lo, _ in spans if lo is not None]
+    highs = [hi for _, hi in spans if hi is not None]
     return pay(min(lows) if lows else None, max(highs) if highs else None,
                parts[0].get("currencyCode"), parts[0].get("interval"))
 

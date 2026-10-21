@@ -55,6 +55,8 @@
   integer too large for a float gives no figure instead of an `OverflowError` (Lever,
   Ashby, Recruitee, Rippling, ClearCompany, careers sites), and Ashby's tier and component
   fields are read only when they are lists.
+- **A pay range written high to low comes out lowest first.** The two figures are
+  swapped, never changed; `compensation` still words the range as the board did.
 - **`posted` and `deadline` are always a real `YYYY-MM-DD`, or empty.** Every reader cut
   the board's value to ten characters, so a date written another way ("1/9/2026") came out
   as text that `since_days` compared as older than any real date, and the role was dropped

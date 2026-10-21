@@ -6,7 +6,7 @@ import html
 import math
 import re
 from dataclasses import asdict, dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 ATS = ("greenhouse", "lever", "ashby", "workday", "workable", "teamtailor", "personio",
        "recruitee", "rippling", "jazzhr", "gem", "polymer", "manatal", "homerun", "clearcompany",
@@ -205,10 +205,20 @@ def period_of(value) -> str:
     return next((period for word, period in _PERIODS if word in v), "")
 
 
+def span(low=None, high=None) -> Tuple[Optional[float], Optional[float]]:
+    """(low, high) as figures (see `amount`), lowest first. A board that puts the higher
+    figure in its minimum field has written the same range the wrong way round: the two
+    are swapped, never changed, and with only one of them there is nothing to order."""
+    lo, hi = amount(low), amount(high)
+    if lo is not None and hi is not None and lo > hi:
+        lo, hi = hi, lo
+    return lo, hi
+
+
 def pay(low=None, high=None, currency="", period="") -> dict:
     """A Job's salary fields from a board's structured pay, all empty when it gives no
     amount: a currency or a period with no figure says nothing."""
-    lo, hi = amount(low), amount(high)
+    lo, hi = span(low, high)
     if lo is None and hi is None:
         return {"salary_min": None, "salary_max": None, "salary_currency": "", "salary_period": ""}
     code = clean(currency).upper()

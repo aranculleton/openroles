@@ -110,6 +110,26 @@ def test_an_odd_pay_shape_gives_no_figure_and_never_sinks_the_board(web):
     assert careersite._salary(posting) == careersite._salary({}) and careersite._pay(posting)
 
 
+def test_a_range_written_high_to_low_comes_out_lowest_first(web):
+    """A caller filtering on salary_max >= x was given the minimum."""
+    from openroles.models import pay
+    assert pay(65000, 50000, "GBP", "year")["salary_min"] == 50000
+    assert (pay(65000, None)["salary_min"], pay(None, 50000)["salary_max"]) == (65000, 50000)
+
+    data = fixture("lever.json")
+    data[0]["salaryRange"] = {"min": 65000, "max": 50000, "currency": "GBP", "interval": "per-year-salary"}
+    web.routes["api.lever.co/v0/postings/acme"] = data
+    assert band(lever.fetch("acme")[0]) == (50000, 65000, "GBP", "year")
+
+    def tier(lo, hi):
+        return {"components": [{"compensationType": "Salary", "interval": "1 YEAR",
+                                "currencyCode": "GBP", "minValue": lo, "maxValue": hi}]}
+    data = fixture("ashby.json")
+    data["jobs"][0]["compensation"] = {"compensationTiers": [tier(50000, 60000), tier(70000, 55000)]}
+    web.routes["api.ashbyhq.com/posting-api/job-board/acme"] = data
+    assert band(ashby.fetch("acme")[0]) == (50000, 70000, "GBP", "year")
+
+
 def test_ashby_pay_worded_only_gives_no_figures(web):
     web.routes["api.ashbyhq.com/posting-api/job-board/acme"] = fixture("ashby.json")
     job = ashby.fetch("acme")[0]

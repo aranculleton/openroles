@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, workplace_of
 from ._xml import parse, text_of
 
 DOMAINS = ("jobs.personio.de", "jobs.personio.com")
@@ -90,7 +90,7 @@ def fetch(token: str, language: str = "en") -> List[Job]:
             location="; ".join(offices),
             locations=offices,
             remote=True if workplace == "remote" else None,
-            posted=text_of(p, "createdAt")[:10],
+            posted=iso_day(text_of(p, "createdAt")),
             department=text_of(p, "department") or text_of(p, "subcompany"),
             employment_type=clean(kind),
             description=_description(p),

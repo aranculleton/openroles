@@ -1,6 +1,7 @@
 """What openroles returns: one shape for every applicant tracking system."""
 from __future__ import annotations
 
+import datetime as _dt
 import html
 import re
 from dataclasses import asdict, dataclass, field
@@ -124,3 +125,24 @@ def workplace_of(*values) -> str:
 def clean(value) -> str:
     """One line of text, whitespace collapsed."""
     return " ".join(str(value or "").split())
+
+
+_DAY = re.compile(r"\s*([0-9]{4})-([0-9]{2})-([0-9]{2})(?![0-9])")
+
+
+def iso_day(*values) -> str:
+    """The first of `values` that starts with a real calendar date, as YYYY-MM-DD, or "".
+
+    Every reader's `posted` and `deadline` comes through here. Cut to ten characters
+    instead, a board's odd value ("1/9/2026", "Invalid date", "2026-02-30") came out as
+    text that `since_days` compared and the newest-first sort ordered as if it were a
+    date, so a role could be dropped as old for a date nobody gave it."""
+    for value in values:
+        m = _DAY.match(str(value or ""))
+        if not m:
+            continue
+        try:
+            return _dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3))).isoformat()
+        except ValueError:
+            continue
+    return ""

@@ -9,7 +9,7 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, iso_day, workplace_of
 
 HOST = "boards-api.greenhouse.io"
 # `content=true` returns every posting's body, departments and offices in the same request.
@@ -59,9 +59,9 @@ def fetch(token: str) -> List[Job]:
             remote=True if "remote" in location.lower() else None,
             # First published, not updated: Greenhouse bumps updated_at on every edit,
             # so a role first posted months ago would read as new.
-            posted=str(j.get("first_published") or j.get("updated_at") or "")[:10],
+            posted=iso_day(j.get("first_published"), j.get("updated_at")),
             department=next((d for d in depts if d), ""),
-            deadline=str(j.get("application_deadline") or "")[:10],
+            deadline=iso_day(j.get("application_deadline")),
             description=html_to_text(j.get("content") or "") or None,
             workplace=workplace_of(location),
         ))

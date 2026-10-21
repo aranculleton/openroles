@@ -14,7 +14,7 @@ from typing import Callable, List, Optional, Union
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, workplace_of
 
 HOST = "api.rippling.com"
 BASE = "https://api.rippling.com/platform/api/ats/v2/board/{slug}"
@@ -106,7 +106,7 @@ def fetch(token: str, details: Details = False, report: Optional[dict] = None) -
         body = "\n\n".join(x for x in (html_to_text(desc.get("role") or ""),
                                        html_to_text(desc.get("company") or "")) if x)
         kind = detail.get("employmentType")
-        job.posted = str(detail.get("createdOn") or "")[:10]
+        job.posted = iso_day(detail.get("createdOn"))
         job.employment_type = clean(kind.get("label")) if isinstance(kind, dict) else clean(kind)
         job.compensation = _pay(detail)
         job.description = body or None

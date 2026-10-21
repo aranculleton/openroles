@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- **`posted` and `deadline` are always a real `YYYY-MM-DD`, or empty.** Every reader cut
+  the board's value to ten characters, so a date written another way ("1/9/2026") came out
+  as text that `since_days` compared as older than any real date, and the role was dropped
+  for a date nobody gave it. Now a value that is not a calendar date reads as no date, and
+  a role with no date is kept, as it always was. Greenhouse falls back to `updated_at`
+  when `first_published` cannot be read, as it did when it was missing.
 - **A careers site's job page is read even when its JSON-LD is not strictly valid JSON.**
   A description pasted with its line breaks left a raw newline inside a JSON string, which
   a strict reader refused, so the page read as having no `JobPosting`. Also read now: a

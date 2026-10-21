@@ -13,7 +13,7 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, workplace_of
 
 HOST = "api.gem.com"
 URL = "https://api.gem.com/job_board/v0/{path}/job_posts/"
@@ -60,7 +60,7 @@ def fetch(token: str) -> List[Job]:
             location="; ".join(places),
             locations=places,
             remote=True if workplace == "remote" else (False if workplace == "onsite" else None),
-            posted=str(p.get("first_published_at") or p.get("created_at") or "")[:10],
+            posted=iso_day(p.get("first_published_at"), p.get("created_at")),
             department=next((d for d in depts if d), ""),
             employment_type=clean(p.get("employment_type")).replace("_", " "),
             description=(str(p.get("content_plain") or "").strip()

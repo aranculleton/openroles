@@ -8,7 +8,7 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, iso_day, workplace_of
 
 HOST = "api.ashbyhq.com"
 URL = "https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true"
@@ -96,7 +96,7 @@ def rows(token: str, data: object) -> List[Job]:
             remote=remote,
             # Ashby's publishedAt is when the job was last published, and the board gives
             # no first-published date: a re-published role reads as new.
-            posted=str(j.get("publishedAt") or "")[:10],
+            posted=iso_day(j.get("publishedAt")),
             department=clean(j.get("department") or j.get("team")),
             employment_type=clean(j.get("employmentType")),
             compensation=_pay(j),

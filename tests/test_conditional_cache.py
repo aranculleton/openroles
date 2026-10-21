@@ -405,3 +405,14 @@ def test_an_answer_kept_for_one_accept_is_not_given_to_another(monkeypatch, tmp_
     assert _http.request_raw(URL, accept="text/html") == ("<html>page</html>", None)
     assert sent == [("application/json", None), ("text/html", None),
                     ("application/json", modified), ("text/html", modified)]
+
+
+def test_a_folder_that_is_not_text_or_a_path_is_refused_when_it_is_named(tmp_path):
+    class BytesPath:
+        def __fspath__(self):
+            return b"/tmp/openroles-cache"
+    openroles.configure(cache_dir=tmp_path)
+    for wrong in (b"/tmp/openroles-cache", BytesPath(), 5, ["/tmp"], True):
+        with pytest.raises(ValueError):
+            openroles.configure(cache_dir=wrong)
+        assert _http.CACHE_DIR == str(tmp_path)                 # left as it was

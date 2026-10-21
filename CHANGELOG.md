@@ -42,6 +42,8 @@
 - **A kept answer goes only to a request like the one it answered.** It is kept by
   address and `Accept`, and one longer than a caller's size limit is read afresh for that
   caller, as an uncached read would be, instead of being handed back whole on a 304.
+- **`configure(cache_dir=...)` refuses anything but text or a path with a `ValueError`**,
+  where a folder named as bytes was taken and then broke every read.
 - **`posted` and `deadline` are always a real `YYYY-MM-DD`, or empty.** Every reader cut
   the board's value to ten characters, so a date written another way ("1/9/2026") came out
   as text that `since_days` compared as older than any real date, and the role was dropped

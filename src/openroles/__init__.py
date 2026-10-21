@@ -47,10 +47,14 @@ def configure(user_agent: Optional[str] = None, robots_agents: Optional[Iterable
     if cache_dir is not None:
         if cache_dir is False or cache_dir == "":
             _http.CACHE_DIR = ""
-        elif cache_dir is True:
-            raise ValueError("cache_dir is a folder to keep answers in, or False for none")
         else:
-            _http.CACHE_DIR = _os.path.abspath(_os.path.expanduser(_os.fspath(cache_dir)))
+            # A folder named as bytes would be taken here and then break every read, so
+            # only text and path objects are folders.
+            path = _os.fspath(cache_dir) if isinstance(cache_dir, (str, _os.PathLike)) else None
+            if not isinstance(path, str):
+                raise ValueError("cache_dir is a folder to keep answers in (a str or a "
+                                 "pathlib.Path), or False for none")
+            _http.CACHE_DIR = _os.path.abspath(_os.path.expanduser(path))
     if user_agent is not None:
         if not user_agent.strip():
             raise ValueError("user_agent must name the application sending the requests")

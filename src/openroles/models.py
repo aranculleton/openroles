@@ -78,7 +78,8 @@ class Job:
     # The posted pay band as numbers, only where the board publishes it as numbers: never
     # read out of the description. `compensation` is the same band as the board words it.
     # The currency is the ISO 4217 code the board gives ("GBP"), and the period one of
-    # "hour", "day", "week", "month", "year", or "" when the board does not say.
+    # "hour", "day", "week", "month", "year", or "" when the board does not say or says
+    # one these cannot hold (every two weeks, twice a month).
     salary_min: Optional[float] = None
     salary_max: Optional[float] = None
     salary_currency: str = ""
@@ -180,16 +181,22 @@ def amount(value) -> Optional[float]:
     return int(x) if x.is_integer() else x
 
 
-_NOT_A_PERIOD = ("biweek", "fortnight", "semimonth", "bimonth", "onetime")
+_NOT_A_PERIOD = ("biweek", "fortnight", "semi", "bimonth", "biannual", "twice", "onetime")
 _PERIODS = (("hour", "hour"), ("daily", "day"), ("day", "day"), ("week", "week"),
             ("month", "month"), ("annual", "year"), ("annum", "year"), ("year", "year"))
+_COUNT = re.compile(r"[0-9]+(?:\.[0-9]+)?")
 
 
 def period_of(value) -> str:
     """"hour", "day", "week", "month", "year" or "" from what boards write: Lever's
     "per-year-salary", Ashby's "1 YEAR", Rippling's "ANNUAL", schema.org's "HOUR". A period
-    no field here can hold ("bi-weekly", "one-time") is ""."""
-    v = re.sub(r"[^a-z]", "", str(value or "").lower())
+    no field here can hold ("bi-weekly", "one-time", "semi-annual") is "", and so is one
+    counted in anything but one of its unit: Ashby's "2 WEEK", "0.5 MONTH" and "6 MONTH"
+    are not a week or a month."""
+    text = str(value or "").lower()
+    if any(float(n) != 1 for n in _COUNT.findall(text)):
+        return ""
+    v = re.sub(r"[^a-z]", "", text)
     if not v or any(w in v for w in _NOT_A_PERIOD):
         return ""
     return next((period for word, period in _PERIODS if word in v), "")

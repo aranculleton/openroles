@@ -53,6 +53,22 @@ def test_ashby_tiers_in_one_currency_are_one_band_and_in_two_are_none(web):
     assert band(ashby.fetch("acme")[0]) == NONE
 
 
+def test_ashby_tiers_paid_over_different_intervals_are_not_one_band(web):
+    def tier(interval, lo, hi):
+        return {"title": "Zone", "components": [{"compensationType": "Salary", "interval": interval,
+                                                 "currencyCode": "GBP", "minValue": lo, "maxValue": hi}]}
+    data = fixture("ashby.json")
+    web.routes["api.ashbyhq.com/posting-api/job-board/acme"] = data
+    for pair in (("1 WEEK", "2 WEEK"), ("2 WEEK", "0.5 MONTH"), ("1 MONTH", "6 MONTH")):
+        data["jobs"][0]["compensation"] = {"compensationTiers": [tier(pair[0], 1000, 1200),
+                                                                 tier(pair[1], 2000, 2400)]}
+        assert band(ashby.fetch("acme")[0]) == NONE, pair
+    data["jobs"][0]["compensation"] = {"summaryComponents": [
+        {"compensationType": "Salary", "interval": "2 WEEK", "currencyCode": "GBP",
+         "minValue": 2000, "maxValue": 2400}]}
+    assert band(ashby.fetch("acme")[0]) == (2000, 2400, "GBP", "")       # not "week"
+
+
 def test_ashby_pay_worded_only_gives_no_figures(web):
     web.routes["api.ashbyhq.com/posting-api/job-board/acme"] = fixture("ashby.json")
     job = ashby.fetch("acme")[0]
@@ -124,6 +140,10 @@ def test_a_figure_is_read_only_when_it_cannot_be_misread(value, want):
     ("per-hour-wage", "hour"), ("HOURLY", "hour"), ("MONTHLY", "month"), ("per-month-salary", "month"),
     ("weekly", "week"), ("DAY", "day"), ("daily", "day"),
     ("bi-weekly", ""), ("semi-monthly", ""), ("one-time", ""), ("NONE", ""), ("", ""), (None, ""),
+    # Ashby's intervals carry a count, and only a count of one is the period it names.
+    ("1 HOUR", "hour"), ("1 MONTH", "month"), ("1.0 WEEK", "week"), ("1 TIME", ""),
+    ("2 WEEK", ""), ("0.5 MONTH", ""), ("2 MONTH", ""), ("3 MONTH", ""), ("6 MONTH", ""),
+    ("semi-annual", ""), ("Semiannually", ""), ("biannual", ""), ("twice monthly", ""),
 ])
 def test_one_word_for_each_pay_period(value, want):
     from openroles.models import period_of

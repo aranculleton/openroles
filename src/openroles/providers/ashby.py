@@ -62,12 +62,14 @@ def _salaries(components) -> list:
 def _salary(job: dict) -> dict:
     """The salary band from Ashby's structured compensation: its summary where that has
     one, else every tier's. Tiers in different currencies or periods are not one band, so
-    they give none, and `compensation` still words them."""
+    they give none, and `compensation` still words them. Two intervals no period field can
+    hold ("2 WEEK", "0.5 MONTH") are still two periods."""
     comp = job.get("compensation") if isinstance(job.get("compensation"), dict) else {}
     tiers = [t for t in comp.get("compensationTiers") or [] if isinstance(t, dict)]
     parts = (_salaries(comp.get("summaryComponents") or [])
              or _salaries(c for t in tiers for c in t.get("components") or []))
-    kinds = {(clean(c.get("currencyCode")).upper(), period_of(c.get("interval"))) for c in parts}
+    kinds = {(clean(c.get("currencyCode")).upper(),
+              period_of(c.get("interval")) or clean(c.get("interval")).lower()) for c in parts}
     if len(kinds) != 1:
         return pay()
     lows = [x for x in (amount(c.get("minValue")) for c in parts) if x is not None]

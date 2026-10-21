@@ -47,6 +47,10 @@
 - **A JSON-LD script wrapped in a great many comment lines is read in linear time.** The
   framing lines were dropped one at a time from the front, so one page could hold a read
   for minutes.
+- **`salary_period` keeps the count a board gives.** Ashby's "2 WEEK", "0.5 MONTH" and
+  "6 MONTH", and a "semi-annual" anywhere, are no period a field can hold, so they give
+  "" instead of "week", "month" or "year", and Ashby tiers paid over different intervals
+  are no longer merged into one band.
 - **`posted` and `deadline` are always a real `YYYY-MM-DD`, or empty.** Every reader cut
   the board's value to ten characters, so a date written another way ("1/9/2026") came out
   as text that `since_days` compared as older than any real date, and the role was dropped

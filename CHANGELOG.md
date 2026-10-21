@@ -2,28 +2,59 @@
 
 ## Unreleased
 
+Pay as numbers, a cache that spares a board that has not changed, one id for a posting
+found in two places, and careers sites read however they write their JSON-LD.
+
 ### New
 
 - **A board that has not changed since the last run sends nothing.** With
   `openroles.configure(cache_dir=...)` (CLI `--cache DIR`), each board's last answer is
   kept with the `ETag` or `Last-Modified` date it came with, and the next run asks with
   them; a board that honours them and has not changed answers `304 Not Modified`. Every
-  read still asks the board. Off by default. Only GET answers are kept, never one marked
-  `no-store`, cut at the size limit or cut short, in owner-only files named for a hash of
-  the request, at most 500 MB and for 30 days unused.
-- **`openroles.job_id(url)` gives a posting's id from its address alone.** The same `Job.id`
-  a board read gives it, so a posting found on a job site whose link goes to the employer's
-  board can be matched to the copy read from that board, with nothing fetched. Greenhouse
-  (its boards, its application form and any page with `gh_jid`), Lever, Ashby, Rippling,
-  Workable, Personio and Workday. An address that does not carry the system's own id gives
-  "", never a guess.
+  read still asks the board. Off by default, and `configure` refuses a folder that is not
+  text or a path with a `ValueError`. An answer is kept only when it is a GET, is not
+  marked `no-store`, and shows that all of it arrived (all of its `Content-Length`, every
+  chunk of a chunked answer, or a gzip stream to its end); a JSON reader keeps it only
+  once it has parsed, and a kept copy a 304 sends back that does not parse is dropped and
+  read afresh. It is kept by address and `Accept`, and one longer than a caller's size
+  limit is read afresh for that caller. Kept answers are owner-only files named for a hash
+  of the request, each with a format version so a later release can ignore them, for 30
+  days unused, and about 500 MB of them: each process keeps the folder to that, so two
+  writing to one folder at once can take it past until one of them next looks at the whole
+  folder (when it starts using it, hourly while it does, and when its own writes pass the
+  cap).
+- **`openroles.job_id(url)` gives a posting's id from its address alone.** The same
+  `Job.id` a board read gives it, so a posting found on a job site whose link goes to the
+  employer's board can be matched to the copy read from that board, with nothing fetched.
+  Greenhouse (its boards, its application form and any page with `gh_jid`), Lever, Ashby,
+  Rippling, Workable, Personio and Workday. An address that does not carry the system's
+  own id, or carries two that disagree, gives "", never a guess. On those seven systems
+  `job_id(job.url)` gives back `job.id` wherever the board gives the posting's address on
+  its own system; an employer can point Greenhouse postings at a page of its own without
+  `gh_jid`, and that address gives "". One Workday case is ambiguous: a listing that
+  sends its path already percent-encoded ("M%C3%BCnchen") gives the same address as one
+  that sends it plain ("München"), and `job_id` reads it as the plain one. Workday's
+  `Job.id` stays exactly as 0.2.0 gave it.
 - **The posted pay band as numbers: `salary_min`, `salary_max`, `salary_currency` and
   `salary_period`.** Filled only where the board publishes its pay as numbers (Lever,
   Ashby, Recruitee, Rippling, ClearCompany and careers sites' schema.org `baseSalary`),
-  never read out of a description. `compensation` keeps the band as the board words it.
-  Ashby's equity and bonus are not salary, and Ashby tiers in different currencies give
-  no figures rather than a band that mixes them. A figure that could be misread, such as
-  "48.000", is left out.
+  never read out of a description; `compensation` keeps the band as the board words it. A
+  range written high to low comes out lowest first, the two figures swapped and never
+  changed. A figure that could be misread ("48.000"), zero or below, or not a finite
+  number is left out. The period is "hour", "day", "week", "month" or "year", and "" for
+  one counted in anything but one of its unit (Ashby's "2 WEEK", "0.5 MONTH") or that no
+  field can hold (bi-weekly, semi-annual, twice monthly). Ashby's equity and bonus are not
+  salary, and Ashby tiers in different currencies or paid over different intervals give no
+  figures rather than one band that mixes them. An odd value anywhere in a board's pay
+  gives no figure, never an exception.
+- **A careers site's job page is read however the page writes its JSON-LD.** 0.2.0 read
+  each script as strict JSON, so a description pasted with its line breaks, which leaves a
+  raw newline inside a JSON string, made the page read as having no `JobPosting`. Also
+  read now: a `type` written without quotes, a script wrapped in comment or CDATA lines,
+  one entity-encoded as a whole, a stray semicolon after it, and a script holding more
+  than one value. However many framing lines a script has, it is read in linear time.
+  Nothing is guessed beyond that: a JavaScript comment with words in it, a trailing comma,
+  or a broken escape or quote is not mended.
 
 ### Changed
 
@@ -32,55 +63,38 @@
 
 ### Fixed
 
-- **A body cut short by the network is never kept for a 304 to send back.** Only one that
-  arrived whole (all of its `Content-Length`, a gzip stream to its end) is kept; a kept
-  copy that a 304 sends back and that is not JSON is dropped and read afresh; and each
-  cache file carries a format version, so files an earlier build wrote are ignored.
-  0.2.0 had the same flaw in memory, for the life of a process.
-- **The cache folder keeps to its 500 MB after every write, not only after every 500th,**
-  and a run that gets only 304s still drops what has gone unused for 30 days.
-- **A kept answer goes only to a request like the one it answered.** It is kept by
-  address and `Accept`, and one longer than a caller's size limit is read afresh for that
-  caller, as an uncached read would be, instead of being handed back whole on a 304.
-- **`configure(cache_dir=...)` refuses anything but text or a path with a `ValueError`**,
-  where a folder named as bytes was taken and then broke every read.
-- **A JSON-LD script wrapped in a great many comment lines is read in linear time.** The
-  framing lines were dropped one at a time from the front, so one page could hold a read
-  for minutes.
-- **`salary_period` keeps the count a board gives.** Ashby's "2 WEEK", "0.5 MONTH" and
-  "6 MONTH", and a "semi-annual" anywhere, are no period a field can hold, so they give
-  "" instead of "week", "month" or "year", and Ashby tiers paid over different intervals
-  are no longer merged into one band.
-- **One posting's odd pay no longer sinks the whole fetch.** A pay figure written as an
-  integer too large for a float gives no figure instead of an `OverflowError` (Lever,
-  Ashby, Recruitee, Rippling, ClearCompany, careers sites), and Ashby's tier and component
-  fields are read only when they are lists.
-- **A pay range written high to low comes out lowest first.** The two figures are
-  swapped, never changed; `compensation` still words the range as the board did.
-- **`job_id(job.url)` gives back `job.id` for every posting.** A Workday address is
-  decoded the way the reader builds the id ("&", "ü"), and a Workday path that arrives
-  percent-encoded now gives the same id as one that does not; Lever, Ashby and Rippling
-  UUIDs come out in lower case as their boards give them; a protocol-relative link and a
-  lower-case Rippling locale are read; and an address whose `gh_jid` disagrees with the
-  posting number in its path gives "" rather than either.
-- **A placeholder written as a date is no date.** A year before 1990 (.NET's
-  `0001-01-01`, `1900-01-01`, the Unix epoch, Lever's `createdAt` of 0) or more than two
-  years ahead (`9999-12-31`) reads as empty, so the role is kept by `since_days` and
-  ClearCompany falls back to `openDate`.
+- **A body cut short is no longer sent back on a 304.** 0.2.0 kept the last answer of any
+  GET that came with an `ETag` in memory, whether the network or the size limit had cut it
+  short or not, and sent it back on every 304 for the life of the process. Now only an
+  answer that shows all of it arrived is kept, as above, so one that gives no length and
+  is neither chunked nor gzipped is read in full every time.
 - **`posted` and `deadline` are always a real `YYYY-MM-DD`, or empty.** Every reader cut
   the board's value to ten characters, so a date written another way ("1/9/2026") came out
   as text that `since_days` compared as older than any real date, and the role was dropped
-  for a date nobody gave it. Now a value that is not a calendar date reads as no date, and
-  a role with no date is kept, as it always was. Greenhouse falls back to `updated_at`
-  when `first_published` cannot be read, as it did when it was missing.
-- **A careers site's job page is read even when its JSON-LD is not strictly valid JSON.**
-  A description pasted with its line breaks left a raw newline inside a JSON string, which
-  a strict reader refused, so the page read as having no `JobPosting`. Also read now: a
-  `type` written without quotes, a script wrapped in comment or CDATA lines, one
-  entity-encoded as a whole, and a stray semicolon after it. These are some of the
-  repairs extruct's JSON-LD reader makes (scrapinghub/extruct, BSD-3-Clause); extruct
-  also strips JavaScript comments and trailing commas and mends escapes and stray quotes,
-  which openroles does not.
+  for a date nobody gave it. A placeholder written as a date did the same: a year before
+  1990 (.NET's `0001-01-01`, `1900-01-01`, the Unix epoch, Lever's `createdAt` of 0) or
+  more than two years ahead (`9999-12-31`). Each now reads as no date, and a role with no
+  date is kept, as it always was. Greenhouse falls back to `updated_at` and ClearCompany
+  to `openDate` when the first date cannot be read.
+- **One posting's odd pay no longer loses every board in the call.** A pay figure too
+  large for a float raised `OverflowError` (Recruitee, Rippling, ClearCompany and careers
+  sites), and Rippling's list of pay ranges sent as a number or `true` raised `TypeError`.
+  Neither is a `BoardError`, so `fetch()` lost every board it was reading.
+- **An answer nested too deep, or a Workday path no address can hold, no longer loses
+  every board in the call.** JSON nested deeper than Python can follow (from a few hundred
+  levels, depending on the Python version), from a board or in a careers page's script,
+  raised `RecursionError`; a board's answer now reads as not JSON, and the script gives no
+  posting while the page's others are still read. A Workday path holding a lone surrogate,
+  which JSON can carry and which has no UTF-8, raised `UnicodeEncodeError`; its posting is
+  left out. The MCP server stopped on a line nested that deep, and now answers it with a
+  parse error.
+- **A page built to stall the reader, or a long run, no longer slows to a crawl.** Finding
+  a page's JSON-LD scripts looked to the end of the page again for every opening tag left
+  unclosed (280 kB of them took 15 seconds, and a 5 MB page could take hours), and so did
+  dropping a description's markup for every "<" with no ">" after it (180 kB took 15
+  seconds). Both now take time in step with the page's length, under a second at 5 MB.
+  Keeping answers in memory added up every kept answer again on each new one, so a long
+  run's cost grew with the square of the answers it read; it now keeps a running total.
 
 ## 0.2.0 (2026-10-19)
 

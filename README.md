@@ -82,7 +82,10 @@ openroles.job_id("https://www.acme.example/careers/?gh_jid=4012345")
 `job_id` is for matching one posting found in two places, read from the employer's board
 and linked from a job site. It reads Greenhouse (any page with `gh_jid` too), Lever,
 Ashby, Rippling, Workable, Personio and Workday addresses, fetches nothing, and gives ""
-for an address that does not carry the system's own posting id.
+for an address that does not carry the system's own posting id. One Workday case is
+ambiguous: a listing that sends its path already percent-encoded ("M%C3%BCnchen") gives
+the same address as one that sends it plain ("München"), and `job_id` reads it as the
+plain one.
 
 `fetch()` raises `openroles.BoardError` when a board cannot be read (a wrong token, no
 answer), and `openroles.RobotsDisallowed` when the host's robots.txt says no.

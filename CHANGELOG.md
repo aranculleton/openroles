@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-10-21)
 
 Pay as numbers, a cache that spares a board that has not changed, one id for a posting
 found in two places, and careers sites read however they write their JSON-LD.

@@ -383,6 +383,33 @@ def test_a_kept_answer_a_304_sends_back_that_is_not_json_is_read_afresh(monkeypa
     assert board.sent[-1] == ('"v1"', None)
 
 
+def test_a_new_answer_that_is_not_json_is_not_kept_for_next_time(monkeypatch, tmp_path):
+    """A board answering a maintenance page with an ETag cost two requests every run: the
+    page was kept, sent back by the next 304, found not to be JSON and read again."""
+    openroles.configure(cache_dir=tmp_path)
+    board = Board(monkeypatch, body=b"<html>maintenance</html>")
+    for _ in range(3):
+        assert _http.request(URL) == (None, "the response was not JSON")
+        new_process(monkeypatch)
+    assert board.sent == [(None, None)] * 3 and files(tmp_path) == []
+    # A reader that takes the page as it comes still keeps it.
+    assert _http.request_raw(URL) == ("<html>maintenance</html>", None)
+    assert _http.request_raw(URL) == ("<html>maintenance</html>", None)
+    assert board.sent[-1] == ('"v1"', None)
+
+
+def test_an_answer_that_stops_being_json_drops_the_one_kept_before(monkeypatch, tmp_path):
+    openroles.configure(cache_dir=tmp_path)
+    board = Board(monkeypatch)
+    assert _http.request(URL) == ({"jobs": [1]}, None)
+    board.body, board.headers = b"<html>maintenance</html>", {"ETag": '"v2"'}
+    assert _http.request(URL) == (None, "the response was not JSON")
+    new_process(monkeypatch)
+    board.body = b'{"jobs": [2]}'
+    assert _http.request(URL) == ({"jobs": [2]}, None)
+    assert board.sent == [(None, None), ('"v1"', None), (None, None)]
+
+
 def test_a_damaged_kept_answer_is_not_kept_alive_by_the_304(monkeypatch, tmp_path):
     openroles.configure(cache_dir=tmp_path)
     board = Board(monkeypatch, body=JOBS[:100])

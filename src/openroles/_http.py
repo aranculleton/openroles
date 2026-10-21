@@ -325,9 +325,11 @@ def request(url: str, payload: Optional[dict] = None,
     A kept answer that a 304 sends back and that is not JSON was damaged before it was
     kept. Asked again with its validators, the board would answer 304 for as long as it
     does not change, so the kept copy is dropped and the board asked once more without
-    them. A kept copy counts as recently used only once it has parsed."""
+    them. A kept copy counts as recently used only once it has parsed, and a new answer is
+    kept only once it has: one that is not JSON (a maintenance page) was kept, sent back
+    on the next 304, found not to be JSON and read again, two requests every run."""
     for attempt in range(2):
-        raw, err, served = _get(url, payload, accept)
+        raw, err, served, fresh = _get(url, payload, accept)
         if err:
             return None, err
         try:
@@ -336,9 +338,13 @@ def request(url: str, payload: Optional[dict] = None,
             if served and not attempt:
                 _forget(served[0])
                 continue
+            if fresh:
+                _forget(fresh[0])   # nor is an older answer this one replaces worth asking about
             return None, "the response was not JSON"
         if served:
             _kept_again(*served)
+        if fresh:
+            _keep(*fresh)
         return data, None
     return None, "the response was not JSON"
 
@@ -367,9 +373,11 @@ def request_raw(url: str, payload: Optional[dict] = None,
     when that host's robots.txt does not refuse the path. A board's own robots.txt says
     nothing about the host it hands a reader on to.
     """
-    body, err, served = _get(url, payload, accept, limit)
+    body, err, served, fresh = _get(url, payload, accept, limit)
     if served:
         _kept_again(*served)
+    if fresh:
+        _keep(*fresh)
     return body, err
 
 
@@ -379,10 +387,18 @@ def _kept_again(key: Key, cached: tuple) -> None:
     _touch(key, *cached)
 
 
+def _keep(key: Key, etag: str, modified: str, body: str) -> None:
+    """A new answer, kept to be asked about next time, in memory and on disk."""
+    _remember(key, etag, body, modified)
+    _disk_put(key, etag, modified, body)
+
+
 def _get(url: str, payload: Optional[dict] = None, accept: str = "*/*",
          limit: int = 100_000_000):
-    """request_raw, and ((url, accept), the kept answer) when a 304 sent the body back
-    from what was kept, else None."""
+    """(body, why, served, fresh): request_raw's two, then ((url, accept), the kept
+    answer) when a 304 sent the body back from what was kept, and ((url, accept), etag,
+    last modified, body) for a new answer that can be kept. Each is None otherwise, and
+    the caller decides whether the body is worth keeping."""
     # gzip: a large board's JSON is a third of the size on the wire.
     headers = {"User-Agent": USER_AGENT, "Accept": accept, "Accept-Encoding": "gzip"}
     data = None
@@ -390,22 +406,22 @@ def _get(url: str, payload: Optional[dict] = None, accept: str = "*/*",
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
     for _hop in range(MAX_REDIRECTS + 1):
-        body, err, onward, served = _one(url, data, headers, limit)
+        body, err, onward, served, fresh = _one(url, data, headers, limit)
         if onward is None:
-            return body, err, served
+            return body, err, served, fresh
         nxt, code = onward
         old, new = urllib.parse.urlsplit(url), urllib.parse.urlsplit(nxt)
         if new.scheme not in ("http", "https") or not new.netloc:
-            return "", f"HTTP {code} to an address that is not a web page", None
+            return "", f"HTTP {code} to an address that is not a web page", None, None
         if new.netloc.lower() != old.netloc.lower():
             why = robots_refuses(new.netloc, [new.path or "/"])
             if why:
-                return "", f"redirected to {new.netloc}, and {why}", None
+                return "", f"redirected to {new.netloc}, and {why}", None, None
         if code == 303 or (code in (301, 302) and data is not None):
             data = None
             headers.pop("Content-Type", None)
         url = nxt
-    return "", f"more than {MAX_REDIRECTS} redirects", None
+    return "", f"more than {MAX_REDIRECTS} redirects", None, None
 
 
 def _fits(body: str, limit: int) -> bool:
@@ -414,9 +430,12 @@ def _fits(body: str, limit: int) -> bool:
 
 
 def _one(url: str, data, headers: dict, limit: int):
-    """(body, None, None, served), ("", why, None, None), or ("", None, (next url, status),
-    None) for a redirect. `served` is ((url, accept), the kept answer) when a 304 sent the
-    body back from what was kept: the caller marks it used once it has read it."""
+    """(body, None, None, served, fresh), ("", why, None, None, None), or ("", None,
+    (next url, status), None, None) for a redirect. `served` is ((url, accept), the kept
+    answer) when a 304 sent the body back from what was kept: the caller marks it used
+    once it has read it. `fresh` is ((url, accept), etag, last modified, body) for a new
+    GET answer that came whole and can be asked about again: the caller keeps it
+    (`_keep`) once it is what the caller wanted."""
     headers = dict(headers)
     host = urllib.parse.urlsplit(url).netloc
     key = (url, headers.get("Accept", ""))
@@ -451,23 +470,22 @@ def _one(url: str, data, headers: dict, limit: int):
                     body, whole = _read(fh, limit)
                     keep = _validators(fh.headers) if data is None and whole else None
             if keep:
-                _remember(key, keep[0], body, keep[1])
-                _disk_put(key, keep[0], keep[1], body)
-            elif cached:
+                return body, None, None, None, (key, keep[0], keep[1], body)
+            if cached:
                 _forget(key)         # what was kept no longer describes this answer
-            return body, None, None, None
+            return body, None, None, None, None
         except urllib.error.HTTPError as e:
             if e.code == 304 and cached:
-                return cached[2], None, None, (key, cached)
+                return cached[2], None, None, (key, cached), None
             if e.code in REDIRECTS and e.headers and e.headers.get("Location"):
-                return "", None, (urllib.parse.urljoin(url, e.headers["Location"]), e.code), None
+                return "", None, (urllib.parse.urljoin(url, e.headers["Location"]), e.code), None, None
             err = f"HTTP {e.code}"
             if e.code not in (502, 504):
                 break
         # HTTPException covers a body cut off mid-read, which is not an OSError.
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as e:
             err = type(e).__name__
-    return "", err, None, None
+    return "", err, None, None, None
 
 
 # ------------------------------------------------------------------ robots.txt

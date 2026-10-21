@@ -11,7 +11,7 @@ unmatched only shows twice.
 from __future__ import annotations
 
 import re
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from .providers import workday
 
@@ -22,7 +22,7 @@ _DIGITS = re.compile(r"^[0-9]+$")
 # Lever, Ashby and Rippling ids are UUIDs: /<board>/<id>, then perhaps /apply or
 # /application. A board's other pages never have a UUID there.
 _BOARD_UUID = re.compile(r"^/[^/]+/(" + _UUID + r")(?:/[A-Za-z]+)?/?$")
-_RIPPLING_PATH = re.compile(r"^/(?:[a-z]{2}-[A-Z]{2}/)?[^/]+/jobs/(" + _UUID + r")(?:/[A-Za-z]+)?/?$")
+_RIPPLING_PATH = re.compile(r"^/(?:[A-Za-z]{2}-[A-Za-z]{2}/)?[^/]+/jobs/(" + _UUID + r")(?:/[A-Za-z]+)?/?$")
 # apply.workable.com/<account>/j/<shortcode>/ and the short link apply.workable.com/j/<shortcode>.
 _WORKABLE_PATH = re.compile(r"^(?:/[^/]+)?/j/([A-Za-z0-9]{6,})(?:/[A-Za-z]+)?/?$")
 _PERSONIO = re.compile(r"^[a-z0-9][a-z0-9-]*\.jobs\.personio\.(?:de|com)$")
@@ -30,12 +30,18 @@ _PERSONIO_PATH = re.compile(r"^/job/([0-9]+)/?$")
 _WORKDAY_HOST = re.compile(r"\.myworkday(?:jobs|site)\.com$")
 
 
+def _gh_jid(query: dict) -> str:
+    """The Greenhouse id any page with gh_jid carries: an employer's own careers page shows
+    Greenhouse postings at its own address with the job id in the query. "" when there is
+    none, and None when the address gives two that disagree."""
+    jids = [j for j in query.get("gh_jid") or [] if _DIGITS.match(j)]
+    if len(set(jids)) > 1:
+        return None
+    return f"gh-{jids[0]}" if jids else ""
+
+
 def _greenhouse(host: str, path: str, query: dict) -> str:
-    # Any page that carries gh_jid: an employer's own careers page shows Greenhouse
-    # postings at its own address with the job id in the query.
-    jid = (query.get("gh_jid") or [""])[0]
-    if _DIGITS.match(jid):
-        return f"gh-{jid}"
+    """The id in a Greenhouse board's own address: a posting page or its application form."""
     if not _GREENHOUSE.match(host):
         return ""
     m = _GREENHOUSE_PATH.match(path)
@@ -68,7 +74,9 @@ def _workday(url: str, host: str, path: str) -> str:
         rest = rest[:[p.lower() for p in rest].index("apply")]
     if not rest or "_" not in rest[-1]:
         return ""
-    return f"wd-{m['tenant'].lower()}-{rest[-1]}"
+    # The reader builds the id from the posting's path decoded, and its address is that
+    # path percent-encoded ("&" is %26, "ü" %C3%BC), so the segment is decoded here too.
+    return f"wd-{m['tenant'].lower()}-{unquote(rest[-1])}"
 
 
 def job_id(url: str) -> str:
@@ -86,24 +94,36 @@ def job_id(url: str) -> str:
     Ashby, Rippling, Workable, Personio and Workday. Nothing is fetched.
     """
     text = str(url or "").strip()
+    if text.startswith("//"):                   # protocol-relative, as scraped HTML links are
+        text = "https:" + text
     parts = urlsplit(text if "//" in text else "https://" + text)
     if parts.scheme not in ("http", "https"):
         return ""
+    query = parse_qs(parts.query)
+    from_query = _gh_jid(query)
+    from_path = _from_path(parts, query)
+    if from_query is None or (from_query and from_path and from_query != from_path):
+        return ""                               # two ids for one address: neither is safe
+    return from_path or from_query
+
+
+def _from_path(parts, query: dict) -> str:
+    """The id the address itself carries, gh_jid aside."""
     host = (parts.hostname or "").lower()
     path = parts.path or "/"
-    query = parse_qs(parts.query)
     found = _greenhouse(host, path, query)
     if found:
         return found
+    # Lever, Ashby and Rippling give their UUIDs in lower case, and so does the id.
     if host in ("jobs.lever.co", "jobs.eu.lever.co"):
         m = _BOARD_UUID.match(path)
-        return f"lv-{m.group(1)}" if m else ""
+        return f"lv-{m.group(1).lower()}" if m else ""
     if host == "jobs.ashbyhq.com":
         m = _BOARD_UUID.match(path)
-        return f"ab-{m.group(1)}" if m else ""
+        return f"ab-{m.group(1).lower()}" if m else ""
     if host == "ats.rippling.com":
         m = _RIPPLING_PATH.match(path)
-        return f"rp-{m.group(1)}" if m else ""
+        return f"rp-{m.group(1).lower()}" if m else ""
     if host == "apply.workable.com":
         m = _WORKABLE_PATH.match(path)
         return f"wk-{m.group(1)}" if m else ""

@@ -320,7 +320,9 @@ class WorkdayBoard:
         where = where or primary
         remote = clean(posting.get("remoteType")).lower()
         return Job(
-            id=f"wd-{self.tenant}-{path.rsplit('/', 1)[-1]}",
+            # Decoded, as job_id() decodes the posting's address: a path that came
+            # percent-encoded and one that did not are one posting.
+            id=f"wd-{self.tenant}-{unquote(path.rsplit('/', 1)[-1])}",
             ats="workday",
             board=self.token,
             title=title,

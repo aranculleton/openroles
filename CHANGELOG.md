@@ -57,6 +57,12 @@
   fields are read only when they are lists.
 - **A pay range written high to low comes out lowest first.** The two figures are
   swapped, never changed; `compensation` still words the range as the board did.
+- **`job_id(job.url)` gives back `job.id` for every posting.** A Workday address is
+  decoded the way the reader builds the id ("&", "ü"), and a Workday path that arrives
+  percent-encoded now gives the same id as one that does not; Lever, Ashby and Rippling
+  UUIDs come out in lower case as their boards give them; a protocol-relative link and a
+  lower-case Rippling locale are read; and an address whose `gh_jid` disagrees with the
+  posting number in its path gives "" rather than either.
 - **`posted` and `deadline` are always a real `YYYY-MM-DD`, or empty.** Every reader cut
   the board's value to ten characters, so a date written another way ("1/9/2026") came out
   as text that `since_days` compared as older than any real date, and the role was dropped

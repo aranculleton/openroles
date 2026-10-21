@@ -83,3 +83,50 @@ def test_every_reader_s_own_address_gives_back_its_own_id(web):
     jobs += workday.fetch("acme.wd3/External", today=dt.date(2026, 10, 15))
     assert {j.ats for j in jobs} == {"greenhouse", "lever", "rippling", "workable", "personio", "workday"}
     assert [openroles.job_id(j.url) for j in jobs] == [j.id for j in jobs]
+
+
+@pytest.mark.parametrize("url,want", [
+    # The boards give their UUIDs in lower case; an address written in upper case is the
+    # same posting.
+    (f"https://jobs.lever.co/acme/{U1.upper()}", f"lv-{U1}"),
+    (f"https://jobs.ashbyhq.com/acme/{U1.upper()}/application", f"ab-{U1}"),
+    (f"https://ats.rippling.com/en-GB/acme/jobs/{U2.upper()}", f"rp-{U2}"),
+    (f"https://ats.rippling.com/en-gb/acme/jobs/{U2}", f"rp-{U2}"),
+    # As scraped HTML writes its links.
+    ("//boards.greenhouse.io/acme/jobs/4012345", "gh-4012345"),
+    # gh_jid saying what the address already says is no conflict.
+    ("https://boards.greenhouse.io/acme/jobs/4012345?gh_jid=4012345", "gh-4012345"),
+    ("https://www.acme.example/careers?gh_jid=4012345&gh_jid=4012345", "gh-4012345"),
+])
+def test_an_address_written_another_way_gives_the_same_id(url, want):
+    assert openroles.job_id(url) == want
+
+
+@pytest.mark.parametrize("url", [
+    "https://boards.greenhouse.io/acme/jobs/4012345?gh_jid=999",
+    "https://boards.greenhouse.io/embed/job_app?for=acme&token=4012345&gh_jid=999",
+    f"https://jobs.lever.co/acme/{U1}?gh_jid=99",
+    "https://www.acme.example/careers?gh_jid=4012345&gh_jid=999",
+])
+def test_an_address_with_two_ids_that_disagree_gives_none(url):
+    """Either could be the wrong one, and a wrong id loses a role."""
+    assert openroles.job_id(url) == ""
+
+
+def test_a_workday_posting_whose_path_needs_encoding_gives_back_its_own_id(web):
+    listing = {"total": 4, "facets": [], "jobPostings": [
+        {"title": "Pricing", "externalPath": "/job/London/Pricing-&-Revenue-Analyst_R5",
+         "locationsText": "London"},
+        {"title": "Analista", "externalPath": "/job/São-Paulo/Analista-de-Precificação_R4",
+         "locationsText": "São Paulo"},
+        {"title": "Datenanalyst", "externalPath": "/job/M%C3%BCnchen/Datenanalyst-M%C3%BCnchen_R3",
+         "locationsText": "München"},
+        {"title": "Planner", "externalPath": "/job/Leeds/Planner-(Fixed-Term)_R6",
+         "locationsText": "Leeds"},
+    ]}
+    web.routes["/wday/cxs/acme/External/jobs"] = listing
+    jobs = workday.fetch("acme.wd3/External", today=dt.date(2026, 10, 15))
+    assert len(jobs) == 4
+    assert [openroles.job_id(j.url) for j in jobs] == [j.id for j in jobs]
+    assert jobs[0].id == "wd-acme-Pricing-&-Revenue-Analyst_R5"          # as 0.2.0 gave it
+    assert jobs[2].id == "wd-acme-Datenanalyst-München_R3"

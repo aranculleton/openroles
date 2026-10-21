@@ -8,7 +8,7 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, amount, clean, html_to_text, iso_day, pay, period_of, workplace_of
 
 HOST = "api.ashbyhq.com"
 URL = "https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true"
@@ -50,6 +50,30 @@ def _pay(job: dict) -> str:
         if clean(comp.get(key)):
             return clean(comp.get(key))
     return ""
+
+
+def _salaries(components) -> list:
+    """The salary components with a figure: equity and bonus are not salary."""
+    return [c for c in components if isinstance(c, dict)
+            and clean(c.get("compensationType")).lower() == "salary"
+            and (amount(c.get("minValue")) is not None or amount(c.get("maxValue")) is not None)]
+
+
+def _salary(job: dict) -> dict:
+    """The salary band from Ashby's structured compensation: its summary where that has
+    one, else every tier's. Tiers in different currencies or periods are not one band, so
+    they give none, and `compensation` still words them."""
+    comp = job.get("compensation") if isinstance(job.get("compensation"), dict) else {}
+    tiers = [t for t in comp.get("compensationTiers") or [] if isinstance(t, dict)]
+    parts = (_salaries(comp.get("summaryComponents") or [])
+             or _salaries(c for t in tiers for c in t.get("components") or []))
+    kinds = {(clean(c.get("currencyCode")).upper(), period_of(c.get("interval"))) for c in parts}
+    if len(kinds) != 1:
+        return pay()
+    lows = [x for x in (amount(c.get("minValue")) for c in parts) if x is not None]
+    highs = [x for x in (amount(c.get("maxValue")) for c in parts) if x is not None]
+    return pay(min(lows) if lows else None, max(highs) if highs else None,
+               parts[0].get("currencyCode"), parts[0].get("interval"))
 
 
 def _request(token: str):
@@ -96,10 +120,11 @@ def rows(token: str, data: object) -> List[Job]:
             remote=remote,
             # Ashby's publishedAt is when the job was last published, and the board gives
             # no first-published date: a re-published role reads as new.
-            posted=str(j.get("publishedAt") or "")[:10],
+            posted=iso_day(j.get("publishedAt")),
             department=clean(j.get("department") or j.get("team")),
             employment_type=clean(j.get("employmentType")),
             compensation=_pay(j),
+            **_salary(j),
             description=(clean_block(j.get("descriptionPlain"))
                          or html_to_text(str(j.get("descriptionHtml") or "")) or None),
             workplace=workplace_of(workplace) or ("remote" if remote else ""),

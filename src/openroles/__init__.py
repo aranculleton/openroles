@@ -14,16 +14,18 @@ from __future__ import annotations
 __version__ = "0.2.0"
 
 import datetime as _dt
+import os as _os
 from typing import Callable, Iterable, List, Optional, Tuple, Union
 
 from .models import ATS, Board, BoardError, Job, RobotsDisallowed
 
 __all__ = ["ATS", "Board", "BoardError", "Job", "RobotsDisallowed", "__version__",
-           "configure", "detect", "fetch", "hosts", "robots_allows"]
+           "configure", "detect", "fetch", "hosts", "job_id", "robots_allows"]
 
 
 def configure(user_agent: Optional[str] = None, robots_agents: Optional[Iterable[str]] = None,
-              respect_ai_input: Optional[bool] = None) -> None:
+              respect_ai_input: Optional[bool] = None,
+              cache_dir: Union[None, bool, str, _os.PathLike[str]] = None) -> None:
     """Settings for an application that embeds openroles, for the rest of the process.
     Anything left as None keeps its current value.
 
@@ -34,8 +36,21 @@ def configure(user_agent: Optional[str] = None, robots_agents: Optional[Iterable
                       as one written for "*" or "openroles" always does.
     respect_ai_input  False only where nothing read is ever passed to an AI model: a site
                       whose robots.txt says "Content-Signal: ai-input=no" is then read.
+    cache_dir         a folder to keep each board's last answer in between runs, with the
+                      ETag or Last-Modified date the board sent: the next run asks with
+                      them, and a board that has not changed answers 304 and sends nothing.
+                      Every read still asks the board; nothing is served without asking.
+                      Off by default; False turns it off. Only GET answers are kept, never
+                      one the host marks no-store, and at most 500 MB, for 30 days unused.
     """
     from . import _http
+    if cache_dir is not None:
+        if cache_dir is False or cache_dir == "":
+            _http.CACHE_DIR = ""
+        elif cache_dir is True:
+            raise ValueError("cache_dir is a folder to keep answers in, or False for none")
+        else:
+            _http.CACHE_DIR = _os.path.abspath(_os.path.expanduser(_os.fspath(cache_dir)))
     if user_agent is not None:
         if not user_agent.strip():
             raise ValueError("user_agent must name the application sending the requests")
@@ -53,6 +68,16 @@ def robots_allows(host: str, paths: Iterable[str]) -> Tuple[bool, str]:
     allow every path for every agent `configure` names."""
     from . import _http
     return _http.robots_allows(host, list(paths))
+
+
+def job_id(url: str) -> str:
+    """The `Job.id` openroles gives the posting at `url`, from the address alone, or "".
+
+    For matching one posting found in two places: read from the employer's board, and
+    linked from a job site. Greenhouse, Lever, Ashby, Rippling, Workable, Personio and
+    Workday addresses; nothing is fetched."""
+    from .ids import job_id as _job_id
+    return _job_id(url)
 
 
 def detect(target: str) -> List[Board]:

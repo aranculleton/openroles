@@ -13,7 +13,7 @@ import logging
 import sys
 from typing import List, Optional
 
-from . import BoardError, Job, __version__, detect, fetch, hosts
+from . import BoardError, Job, __version__, configure, detect, fetch, hosts
 from .models import systems
 
 
@@ -77,6 +77,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--details", action="store_true",
                     help="Workday, Rippling and Polymer: fetch every posting's description "
                          "(one request each)")
+    ap.add_argument("--cache", metavar="DIR",
+                    help="keep each board's last answer in DIR, so a board that has not "
+                         "changed since the last run sends nothing")
     ap.add_argument("--json", action="store_true", help="JSON array (the default when piped)")
     ap.add_argument("--jsonl", action="store_true", help="one JSON object per line")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -84,6 +87,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO if a.verbose else logging.WARNING,
                         format="%(name)s: %(message)s")
+    if a.cache:
+        configure(cache_dir=a.cache)
     try:
         jobs = fetch(a.target, query=a.query, location=a.location,
                      remote=True if a.remote else None, since_days=a.since, limit=a.limit,

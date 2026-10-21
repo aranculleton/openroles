@@ -16,7 +16,7 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, workplace_of
 
 HOST = "www.workable.com"
 URL = "https://www.workable.com/api/accounts/{token}?details=true"
@@ -62,7 +62,7 @@ def fetch(token: str) -> List[Job]:
             location=place,
             locations=[place] if place else [],
             remote=True if workplace == "remote" else (False if workplace == "onsite" else None),
-            posted=str(j.get("published_on") or j.get("created_at") or "")[:10],
+            posted=iso_day(j.get("published_on"), j.get("created_at")),
             department=clean(j.get("department")),
             employment_type=clean(j.get("employment_type")),
             description=html_to_text(j.get("description") or "") or None,

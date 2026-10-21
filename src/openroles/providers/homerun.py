@@ -12,7 +12,7 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, workplace_of
 from ._xml import parse
 
 HOST = "feed.homerun.co"
@@ -73,7 +73,7 @@ def fetch(token: str) -> List[Job]:
             location=place,
             locations=[place] if place else [],
             remote=True if workplace_of(place) == "remote" else None,
-            posted=_text(e, "updated")[:10],
+            posted=iso_day(_text(e, "updated")),
             department=_text(e, "department", "name"),
             employment_type=_text(e, "type", "name"),
             compensation=_text(e, "salary_indication"),

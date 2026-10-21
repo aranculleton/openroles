@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+### New
+
+- **A board that has not changed since the last run sends nothing.** With
+  `openroles.configure(cache_dir=...)` (CLI `--cache DIR`), each board's last answer is
+  kept with the `ETag` or `Last-Modified` date it came with, and the next run asks with
+  them; Greenhouse and Lever, among others, answer `304 Not Modified`. Every read still
+  asks the board. Off by default. Only GET answers are kept, never one marked `no-store`
+  or cut at the size limit, in owner-only files named for a hash of the address, at most
+  500 MB and for 30 days unused.
+- **`openroles.job_id(url)` gives a posting's id from its address alone.** The same `Job.id`
+  a board read gives it, so a posting found on a job site whose link goes to the employer's
+  board can be matched to the copy read from that board, with nothing fetched. Greenhouse
+  (its boards, its application form and any page with `gh_jid`), Lever, Ashby, Rippling,
+  Workable, Personio and Workday. An address that does not carry the system's own id gives
+  "", never a guess.
+- **The posted pay band as numbers: `salary_min`, `salary_max`, `salary_currency` and
+  `salary_period`.** Filled only where the board publishes its pay as numbers (Lever,
+  Ashby, Recruitee, Rippling, ClearCompany and careers sites' schema.org `baseSalary`),
+  never read out of a description. `compensation` keeps the band as the board words it.
+  Ashby's equity and bonus are not salary, and Ashby tiers in different currencies give
+  no figures rather than a band that mixes them. A figure that could be misread, such as
+  "48.000", is left out.
+
+### Changed
+
+- **A host that sends `Last-Modified` and no `ETag` is asked with `If-Modified-Since`.**
+  Read twice in a process, it answers 304 and sends nothing, as one with an `ETag` did.
+
+### Fixed
+
+- **`posted` and `deadline` are always a real `YYYY-MM-DD`, or empty.** Every reader cut
+  the board's value to ten characters, so a date written another way ("1/9/2026") came out
+  as text that `since_days` compared as older than any real date, and the role was dropped
+  for a date nobody gave it. Now a value that is not a calendar date reads as no date, and
+  a role with no date is kept, as it always was. Greenhouse falls back to `updated_at`
+  when `first_published` cannot be read, as it did when it was missing.
+- **A careers site's job page is read even when its JSON-LD is not strictly valid JSON.**
+  A description pasted with its line breaks left a raw newline inside a JSON string, which
+  a strict reader refused, so the page read as having no `JobPosting`. Also read now: a
+  `type` written without quotes, a script wrapped in comment or CDATA lines, one
+  entity-encoded as a whole, and a stray semicolon after it. The cases are the ones
+  extruct's JSON-LD reader handles (BSD-3-Clause), written afresh.
+
 ## 0.2.0 (2026-10-19)
 
 Eleven more hiring systems, careers sites with no job API, and a library any application

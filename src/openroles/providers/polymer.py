@@ -12,7 +12,7 @@ from typing import Callable, List, Optional, Union
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, workplace_of
 
 HOST = "api.polymer.co"
 BASE = "https://api.polymer.co/v1/hire/organizations/{slug}/jobs"
@@ -67,7 +67,7 @@ def fetch(token: str, details: Details = False, report: Optional[dict] = None) -
             location=place,
             locations=[place] if place else [],
             remote=True if workplace == "remote" else (False if workplace == "onsite" else None),
-            posted=str(i.get("published_at") or i.get("created_at") or "")[:10],
+            posted=iso_day(i.get("published_at"), i.get("created_at")),
             department=clean(i.get("job_category_name")),
             employment_type=clean(i.get("kind_pretty")),
             compensation=clean(i.get("salary_pretty")),

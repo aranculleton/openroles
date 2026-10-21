@@ -201,3 +201,134 @@ def test_the_command_line_takes_a_cache_folder(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(cli, "fetch", lambda *a, **k: [])
     assert cli.main(["greenhouse:acme", "--cache", str(tmp_path), "--json"]) == 0
     assert _http.CACHE_DIR == str(tmp_path)
+
+
+# ------------------------------------------------------------------ a body cut short
+
+JOBS = json.dumps({"jobs": [{"id": i, "title": f"Role {i}"} for i in range(200)]}).encode()
+
+
+def test_a_body_short_of_its_content_length_is_never_kept(monkeypatch, tmp_path):
+    """http.client returns a short read with no error when the connection drops, so the
+    only sign is the Content-Length the answer declared."""
+    openroles.configure(cache_dir=tmp_path)
+    board = Board(monkeypatch, body=JOBS[:len(JOBS) // 2],
+                  headers={"ETag": '"v1"', "Content-Length": str(len(JOBS))})
+    assert _http.request(URL) == (None, "the response was not JSON")
+    assert files(tmp_path) == []
+    board.body, board.headers = JOBS, {"ETag": '"v1"', "Content-Length": str(len(JOBS))}
+    new_process(monkeypatch)
+    data, err = _http.request(URL)
+    assert err is None and len(data["jobs"]) == 200
+    assert board.sent == [(None, None), (None, None)]          # nothing was asked about again
+
+
+def test_a_gzip_stream_that_stops_before_its_end_is_never_kept(monkeypatch, tmp_path):
+    openroles.configure(cache_dir=tmp_path)
+    zipped = gzip.compress(JOBS)
+    board = Board(monkeypatch, body=zipped[:len(zipped) // 2],
+                  headers={"ETag": '"v1"', "Content-Encoding": "gzip"})
+    assert _http.request(URL) == (None, "the response was not JSON")
+    assert files(tmp_path) == []
+    board.body = zipped
+    data, err = _http.request(URL)
+    assert err is None and len(data["jobs"]) == 200
+    assert board.sent == [(None, None), (None, None)]
+
+
+def test_a_body_cut_short_on_a_real_connection_is_never_kept(monkeypatch, tmp_path):
+    """The same through http.client itself, against a server on this machine that declares
+    the whole length and closes the connection halfway through."""
+    import http.server
+    import threading
+    import urllib.request
+
+    sent = []
+
+    class Cut(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            sent.append(self.headers.get("If-None-Match"))
+            self.send_response(200)
+            self.send_header("ETag", '"v1"')
+            self.send_header("Content-Length", str(len(JOBS)))
+            self.end_headers()
+            self.wfile.write(JOBS[:len(JOBS) // 2])
+            self.close_connection = True
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Cut)
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05},
+                     daemon=True).start()
+    direct = urllib.request.build_opener(urllib.request.ProxyHandler({}), _http._HandBack)
+    monkeypatch.setattr(_http, "_urlopen", lambda req, timeout: direct.open(req, timeout=timeout))
+    try:
+        openroles.configure(cache_dir=tmp_path)
+        url = f"http://127.0.0.1:{server.server_port}/jobs"
+        assert _http.request(url) == (None, "the response was not JSON")
+        _http.request(url)
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert sent == [None, None] and files(tmp_path) == []
+
+
+def test_a_kept_answer_a_304_sends_back_that_is_not_json_is_read_afresh(monkeypatch, tmp_path):
+    """A damaged kept copy would otherwise be served on every 304 until the board changed."""
+    openroles.configure(cache_dir=tmp_path)
+    board = Board(monkeypatch, body=JOBS[:100])                 # damaged, and kept as it came
+    _http.request_raw(URL, accept="application/json")
+    new_process(monkeypatch)
+    board.body = JOBS
+    data, err = _http.request(URL)
+    assert err is None and len(data["jobs"]) == 200
+    assert board.sent[-2:] == [('"v1"', None), (None, None)]
+    new_process(monkeypatch)
+    assert _http.request(URL)[0] == data                        # the good copy is the one kept
+    assert board.sent[-1] == ('"v1"', None)
+
+
+def test_a_damaged_kept_answer_is_not_kept_alive_by_the_304(monkeypatch, tmp_path):
+    openroles.configure(cache_dir=tmp_path)
+    board = Board(monkeypatch, body=JOBS[:100])
+    _http.request_raw(URL, accept="application/json")
+    [kept] = files(tmp_path)
+    os.utime(kept, (1_000_000_000, 1_000_000_000))
+    new_process(monkeypatch)
+
+    def gone(req, timeout=0):
+        board.sent.append((req.get_header("If-none-match"), None))
+        if req.get_header("If-none-match"):
+            raise urllib.error.HTTPError(req.full_url, 304, "Not Modified", {}, None)
+        raise urllib.error.HTTPError(req.full_url, 500, "Server Error", {}, None)
+    monkeypatch.setattr(_http, "_urlopen", gone)
+    assert _http.request(URL) == (None, "HTTP 500")
+    assert files(tmp_path) == []                                # dropped, not refreshed
+
+
+def test_a_file_without_this_release_s_format_is_a_miss(monkeypatch, tmp_path):
+    """Files an earlier build wrote may hold a body cut short; this release never trusts them."""
+    openroles.configure(cache_dir=tmp_path)
+    board = Board(monkeypatch)
+    _http.request(URL)
+    [kept] = files(tmp_path)
+    with gzip.open(kept, "rt", encoding="utf-8") as fh:
+        entry = json.load(fh)
+    assert entry.pop("v") == _http.CACHE_FORMAT
+    for v in (None, True, _http.CACHE_FORMAT + 1, str(_http.CACHE_FORMAT)):
+        if v is not None:
+            entry["v"] = v
+        with gzip.open(kept, "wt", encoding="utf-8") as fh:
+            json.dump(entry, fh)
+        new_process(monkeypatch)
+        assert _http.request(URL) == ({"jobs": [1]}, None)
+        assert board.sent[-1] == (None, None)
+
+
+def test_a_corrupt_gzip_body_is_a_failed_read_not_an_exception(monkeypatch):
+    zipped = gzip.compress(JOBS)
+    Board(monkeypatch, body=zipped[:10] + b"\xff" * 20 + zipped[30:],
+          headers={"ETag": '"v1"', "Content-Encoding": "gzip"})
+    monkeypatch.setattr(_http, "RETRY_PAUSE", 0)
+    assert _http.request(URL) == (None, "BadGzipFile")

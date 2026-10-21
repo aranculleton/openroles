@@ -93,8 +93,17 @@ CACHE_DIR = ""
 CACHE_BYTES = 500_000_000
 CACHE_DAYS = 30
 PRUNE_EVERY = 500          # writes between tidies of the folder, after the first
+# Written into every file. A file without it, or with another, is a miss and is replaced on
+# the next full answer: so a release that changes what a file means, or one that must not
+# trust what an earlier build wrote (before 0.3.0 a body cut short by the network could be
+# kept), says so by raising it.
+CACHE_FORMAT = 1
 _WRITES: dict = {}
 _PRUNE_LOCK = threading.Lock()
+
+
+def _this_format(v) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool) and v == CACHE_FORMAT
 
 
 def _cache_file(url: str) -> str:
@@ -110,9 +119,9 @@ def _disk_get(url: str) -> Optional[Tuple[str, str, str]]:
     try:
         with gzip.open(_cache_file(url), "rt", encoding="utf-8") as fh:
             entry = json.load(fh)
-    except (OSError, EOFError, ValueError, zlib.error):
+    except (OSError, EOFError, ValueError, zlib.error, RecursionError):
         return None
-    if not isinstance(entry, dict) or entry.get("url") != url:
+    if not isinstance(entry, dict) or not _this_format(entry.get("v")) or entry.get("url") != url:
         return None
     etag, modified, body = (entry.get(k) for k in ("etag", "last_modified", "body"))
     if not all(isinstance(x, str) for x in (etag, modified, body)) or not (etag or modified):
@@ -129,8 +138,9 @@ def _disk_put(url: str, etag: str, modified: str, body: str) -> None:
         os.makedirs(folder, mode=0o700, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=folder, suffix=".tmp")      # owner-only
         with os.fdopen(fd, "wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as fh:
-            fh.write(json.dumps({"url": url, "etag": etag, "last_modified": modified,
-                                 "body": body}, ensure_ascii=False).encode("utf-8"))
+            fh.write(json.dumps({"v": CACHE_FORMAT, "url": url, "etag": etag,
+                                 "last_modified": modified, "body": body},
+                                ensure_ascii=False).encode("utf-8"))
         os.replace(tmp, _cache_file(url))
         tmp = ""
     except OSError:
@@ -207,17 +217,40 @@ def _wait_turn(host: str) -> None:
         time.sleep(start - now)
 
 
+def _all_arrived(fh, got: int) -> bool:
+    """Whether every byte the answer declared arrived. With a size to read, http.client
+    hands back a short read with no error when the connection drops (its own comment says
+    it does not raise IncompleteRead, for compatibility), so the declared Content-Length
+    is the only sign a body was cut short. A chunked answer that drops raises instead."""
+    left = getattr(fh, "length", None)          # what http.client still expected
+    if isinstance(left, int) and left > 0:
+        return False
+    headers = fh.headers
+    if "chunked" in (headers.get("Transfer-Encoding") or "").lower():
+        return True
+    declared = (headers.get("Content-Length") or "").strip()
+    if declared.isascii() and declared.isdigit():
+        return got == int(declared)
+    return True
+
+
 def _read(fh, limit: int) -> Tuple[str, bool]:
     """(the response body as text, unzipped when it came gzipped, at most `limit` bytes;
-    whether that is all of it). A body cut at the limit is never kept for next time."""
+    whether that is provably all of it). Only a whole body is ever kept for next time: not
+    one cut at the limit, not one short of its Content-Length, and not a gzip stream that
+    stops before its end."""
     raw = fh.read(limit)
-    whole = len(raw) < limit
+    whole = len(raw) < limit and _all_arrived(fh, len(raw))
     if (fh.headers.get("Content-Encoding") or "").lower() == "gzip":
+        unzip = zlib.decompressobj(16 + zlib.MAX_WBITS)
         try:
-            raw = zlib.decompressobj(16 + zlib.MAX_WBITS).decompress(raw, limit)
-        except zlib.error:
-            raw = gzip.decompress(raw)
-        whole = whole and len(raw) < limit
+            raw = unzip.decompress(raw, limit)
+        except zlib.error as e:
+            raise gzip.BadGzipFile(f"the gzipped body could not be unzipped ({e})") from e
+        # A stream cut off by the network unzips to a prefix with no error at all; only
+        # reaching the stream's end shows it was all there.
+        whole = (whole and unzip.eof and not unzip.unconsumed_tail
+                 and not unzip.unused_data.strip(b"\0") and len(raw) < limit)
         raw = raw[:limit]
     return raw.decode("utf-8", "replace"), whole
 
@@ -229,14 +262,27 @@ def _body(fh, limit: int) -> str:
 
 def request(url: str, payload: Optional[dict] = None,
             accept: str = "application/json") -> Tuple[Optional[object], Optional[str]]:
-    """(parsed JSON, None) or (None, why). A GET, or a JSON POST when `payload` is given."""
-    raw, err = request_raw(url, payload, accept)
-    if err:
-        return None, err
-    try:
-        return json.loads(raw), None
-    except ValueError:
-        return None, "the response was not JSON"
+    """(parsed JSON, None) or (None, why). A GET, or a JSON POST when `payload` is given.
+
+    A kept answer that a 304 sends back and that is not JSON was damaged before it was
+    kept. Asked again with its validators, the board would answer 304 for as long as it
+    does not change, so the kept copy is dropped and the board asked once more without
+    them. A kept copy counts as recently used only once it has parsed."""
+    for attempt in range(2):
+        raw, err, served = _get(url, payload, accept)
+        if err:
+            return None, err
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            if served and not attempt:
+                _forget(served[0])
+                continue
+            return None, "the response was not JSON"
+        if served:
+            _kept_again(*served)
+        return data, None
+    return None, "the response was not JSON"
 
 
 class _HandBack(urllib.request.HTTPRedirectHandler):
@@ -263,6 +309,22 @@ def request_raw(url: str, payload: Optional[dict] = None,
     when that host's robots.txt does not refuse the path. A board's own robots.txt says
     nothing about the host it hands a reader on to.
     """
+    body, err, served = _get(url, payload, accept, limit)
+    if served:
+        _kept_again(*served)
+    return body, err
+
+
+def _kept_again(url: str, cached: tuple) -> None:
+    """A kept answer a 304 sent back and that was read: recent again, in memory and on disk."""
+    _remember(url, cached[0], cached[2], cached[1])
+    _touch(url, *cached)
+
+
+def _get(url: str, payload: Optional[dict] = None, accept: str = "*/*",
+         limit: int = 100_000_000):
+    """request_raw, and (the address, the kept answer) when a 304 sent the body back
+    from what was kept, else None."""
     # gzip: a large board's JSON is a third of the size on the wire.
     headers = {"User-Agent": USER_AGENT, "Accept": accept, "Accept-Encoding": "gzip"}
     data = None
@@ -270,26 +332,28 @@ def request_raw(url: str, payload: Optional[dict] = None,
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
     for _hop in range(MAX_REDIRECTS + 1):
-        body, err, onward = _one(url, data, headers, limit)
+        body, err, onward, served = _one(url, data, headers, limit)
         if onward is None:
-            return body, err
+            return body, err, served
         nxt, code = onward
         old, new = urllib.parse.urlsplit(url), urllib.parse.urlsplit(nxt)
         if new.scheme not in ("http", "https") or not new.netloc:
-            return "", f"HTTP {code} to an address that is not a web page"
+            return "", f"HTTP {code} to an address that is not a web page", None
         if new.netloc.lower() != old.netloc.lower():
             why = robots_refuses(new.netloc, [new.path or "/"])
             if why:
-                return "", f"redirected to {new.netloc}, and {why}"
+                return "", f"redirected to {new.netloc}, and {why}", None
         if code == 303 or (code in (301, 302) and data is not None):
             data = None
             headers.pop("Content-Type", None)
         url = nxt
-    return "", f"more than {MAX_REDIRECTS} redirects"
+    return "", f"more than {MAX_REDIRECTS} redirects", None
 
 
 def _one(url: str, data, headers: dict, limit: int):
-    """(body, None, None), ("", why, None), or ("", None, (next url, status)) for a redirect."""
+    """(body, None, None, served), ("", why, None, None), or ("", None, (next url, status),
+    None) for a redirect. `served` is (url, the kept answer) when a 304 sent the body back
+    from what was kept: the caller marks it used once it has read it."""
     headers = dict(headers)
     host = urllib.parse.urlsplit(url).netloc
     cached = None
@@ -321,21 +385,19 @@ def _one(url: str, data, headers: dict, limit: int):
                 _disk_put(url, keep[0], keep[1], body)
             elif cached:
                 _forget(url)         # what was kept no longer describes this answer
-            return body, None, None
+            return body, None, None, None
         except urllib.error.HTTPError as e:
             if e.code == 304 and cached:
-                _remember(url, cached[0], cached[2], cached[1])
-                _touch(url, *cached)
-                return cached[2], None, None
+                return cached[2], None, None, (url, cached)
             if e.code in REDIRECTS and e.headers and e.headers.get("Location"):
-                return "", None, (urllib.parse.urljoin(url, e.headers["Location"]), e.code)
+                return "", None, (urllib.parse.urljoin(url, e.headers["Location"]), e.code), None
             err = f"HTTP {e.code}"
             if e.code not in (502, 504):
                 break
         # HTTPException covers a body cut off mid-read, which is not an OSError.
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as e:
             err = type(e).__name__
-    return "", err, None
+    return "", err, None, None
 
 
 # ------------------------------------------------------------------ robots.txt

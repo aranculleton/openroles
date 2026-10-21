@@ -325,7 +325,7 @@ def request(url: str, payload: Optional[dict] = None,
             return None, err
         try:
             data = json.loads(raw)
-        except ValueError:
+        except (ValueError, RecursionError):        # nested deeper than Python can follow
             if served and not attempt:
                 _forget(served[0])
                 continue

@@ -334,6 +334,17 @@ def test_a_corrupt_gzip_body_is_a_failed_read_not_an_exception(monkeypatch):
     assert _http.request(URL) == (None, "BadGzipFile")
 
 
+def test_json_nested_deeper_than_python_can_follow_is_not_json(monkeypatch):
+    """It raised RecursionError, which is not a BoardError, so one board's answer lost
+    every other board in the same call."""
+    from openroles.providers import greenhouse
+    Board(monkeypatch, body=b"[" * 100_000)
+    assert _http.request(URL) == (None, "the response was not JSON")
+    monkeypatch.setattr(_http, "robots_txt", lambda host: (404, ""))
+    with pytest.raises(openroles.BoardError):
+        greenhouse.fetch("acme")
+
+
 # ------------------------------------------------------------------ the folder's caps
 
 def folder_bytes(folder) -> int:

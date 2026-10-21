@@ -135,7 +135,7 @@ def serve(stdin=None, stdout=None) -> int:
             continue
         try:
             msg = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):        # nested too deep to read is unreadable too
             reply = {"jsonrpc": "2.0", "id": None,
                      "error": {"code": -32700, "message": "parse error"}}
         else:

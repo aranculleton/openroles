@@ -21,6 +21,14 @@ def test_handshake_and_tool_list():
     assert replies[2]["error"]["code"] == -32601
 
 
+def test_a_line_nested_too_deep_is_a_parse_error_not_a_dead_server():
+    out = io.StringIO()
+    mcp.serve(io.StringIO("[" * 100_000 + "\n" + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+                          + "\n"), out)
+    replies = [json.loads(x) for x in out.getvalue().splitlines()]
+    assert replies[0]["error"]["code"] == -32700 and replies[1]["id"] == 2
+
+
 def test_a_tool_error_is_a_result_not_a_crash(web):
     res = mcp.call_tool("list_open_roles", {"target": "lever:nobody"})
     assert res["isError"] is True

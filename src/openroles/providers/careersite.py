@@ -170,7 +170,7 @@ def _leading(text: str) -> list:
             return out
         try:
             value, i = decoder.raw_decode(text, i)
-        except ValueError:
+        except (ValueError, RecursionError):        # nested deeper than Python can follow
             return out
         out.append(value)
 
@@ -232,7 +232,10 @@ def postings(html: str) -> List[dict]:
     "DatePosted")."""
     out = []
     for block in _ld_scripts(html or ""):
-        stack = [_lower(data) for data in json_values(block)]
+        try:
+            stack = [_lower(data) for data in json_values(block)]
+        except RecursionError:      # JSON nested deeper than this can follow: as unreadable
+            continue
         while stack:
             node = stack.pop()
             if isinstance(node, list):

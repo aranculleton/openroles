@@ -199,6 +199,17 @@ def test_the_scripts_found_are_the_ones_one_regular_expression_found():
         assert careersite._ld_scripts(page) == whole.findall(page), page
 
 
+def test_a_script_nested_deeper_than_python_can_follow_gives_no_posting():
+    """It raised RecursionError out of fetch(), from the JSON reader or from lower-casing
+    the keys, and lost the whole board. The page's other scripts are still read."""
+    import sys
+    deep = sys.getrecursionlimit() + 100
+    for text in ("[" * 100_000, "[" * deep + FLAT + "]" * deep, '{"a": ' * deep + FLAT + "}" * deep):
+        page = (f'<script type="application/ld+json">{text}</script>'
+                f'<script type="application/ld+json">{FLAT}</script>')
+        assert [p["title"] for p in careersite.postings(page)] == ["Demand Planner"]
+
+
 def test_a_page_whose_description_keeps_its_line_breaks_is_a_role(web):
     site(web)
     lead = PLANNER.replace("Demand Planner", "Planning Lead")

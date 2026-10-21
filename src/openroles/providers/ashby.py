@@ -52,6 +52,12 @@ def _pay(job: dict) -> str:
     return ""
 
 
+def _list(value) -> list:
+    """A field Ashby documents as a list, or nothing: one odd posting is not a reason to
+    lose the board."""
+    return value if isinstance(value, list) else []
+
+
 def _salaries(components) -> list:
     """The salary components with a figure: equity and bonus are not salary."""
     return [c for c in components if isinstance(c, dict)
@@ -65,9 +71,9 @@ def _salary(job: dict) -> dict:
     they give none, and `compensation` still words them. Two intervals no period field can
     hold ("2 WEEK", "0.5 MONTH") are still two periods."""
     comp = job.get("compensation") if isinstance(job.get("compensation"), dict) else {}
-    tiers = [t for t in comp.get("compensationTiers") or [] if isinstance(t, dict)]
-    parts = (_salaries(comp.get("summaryComponents") or [])
-             or _salaries(c for t in tiers for c in t.get("components") or []))
+    tiers = [t for t in _list(comp.get("compensationTiers")) if isinstance(t, dict)]
+    parts = (_salaries(_list(comp.get("summaryComponents")))
+             or _salaries(c for t in tiers for c in _list(t.get("components"))))
     kinds = {(clean(c.get("currencyCode")).upper(),
               period_of(c.get("interval")) or clean(c.get("interval")).lower()) for c in parts}
     if len(kinds) != 1:

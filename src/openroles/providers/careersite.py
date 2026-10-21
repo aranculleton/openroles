@@ -251,7 +251,7 @@ def _pay(p: dict) -> str:
     def num(x):
         try:
             return f"{float(x):,.0f}"
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return clean(x)
     span = "-".join(num(x) for x in (lo, hi) if x is not None)
     return clean(f"{s.get('currency') or p.get('salarycurrency') or ''} {span} "

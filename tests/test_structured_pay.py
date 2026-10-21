@@ -69,6 +69,47 @@ def test_ashby_tiers_paid_over_different_intervals_are_not_one_band(web):
     assert band(ashby.fetch("acme")[0]) == (2000, 2400, "GBP", "")       # not "week"
 
 
+HUGE = 10 ** 400          # a plain JSON integer, which json.loads keeps as an int
+
+
+def test_an_odd_pay_shape_gives_no_figure_and_never_sinks_the_board(web):
+    """One posting's odd pay raised OverflowError or TypeError, which is not a BoardError,
+    so fetch() lost every board in the call."""
+    data = fixture("lever.json")
+    data[0]["salaryRange"] = {"min": HUGE, "max": 65000, "currency": "GBP", "interval": "per-year-salary"}
+    web.routes["api.lever.co/v0/postings/acme"] = data
+    assert band(lever.fetch("acme")[0]) == (None, 65000, "GBP", "year")
+
+    data = fixture("ashby.json")
+    web.routes["api.ashbyhq.com/posting-api/job-board/acme"] = data
+    for compensation in ({"compensationTiers": 5}, {"compensationTiers": True},
+                         {"summaryComponents": 1.5}, {"compensationTiers": [{"components": 7}]},
+                         {"summaryComponents": [{"compensationType": "Salary", "interval": "1 YEAR",
+                                                 "currencyCode": "GBP", "minValue": HUGE, "maxValue": HUGE}]}):
+        data["jobs"][0]["compensation"] = compensation
+        assert band(ashby.fetch("acme")[0]) == NONE, compensation
+
+    data = fixture("recruitee.json")
+    data["offers"][0]["salary"] = {"min": HUGE, "max": math.inf, "currency": "GBP", "period": "year"}
+    web.routes["acme.recruitee.com/api/offers/"] = data
+    assert band(recruitee.fetch("acme")[0]) == NONE
+
+    job = fixture("rippling_job.json")
+    job["payRangeDetails"] = [{"rangeStart": HUGE, "rangeEnd": HUGE, "currency": "GBP", "frequency": "ANNUAL"}]
+    web.routes["/v2/board/acme/jobs/0b9c1f7e"] = job
+    web.routes["/v2/board/acme/jobs?"] = fixture("rippling_list.json")
+    assert band(rippling.fetch("acme", details=True)[0]) == NONE
+
+    site = "0b9c1f7e-2222-4c2b-9f00-000000000301"
+    web.routes[f"careers-api.clearcompany.com/v1/{site}"] = {"results": [{
+        "id": 55, "positionTitle": "Recruiter", "applyLink": "https://jobs.clearcompany.com/careers/jobs/55",
+        "salaryRangeLow": HUGE, "salaryRangeHigh": HUGE, "salaryType": "Hourly"}]}
+    assert band(clearcompany.fetch(site)[0]) == NONE
+
+    posting = {"@type": "JobPosting", "title": "T", "basesalary": {"currency": "GBP", "value": HUGE}}
+    assert careersite._salary(posting) == careersite._salary({}) and careersite._pay(posting)
+
+
 def test_ashby_pay_worded_only_gives_no_figures(web):
     web.routes["api.ashbyhq.com/posting-api/job-board/acme"] = fixture("ashby.json")
     job = ashby.fetch("acme")[0]
@@ -129,6 +170,8 @@ def test_the_figures_are_in_the_dict_every_caller_reads(web):
     ("48.000", None),          # forty-eight thousand in much of Europe, forty-eight elsewhere
     ("48k", None), ("", None), (None, None), (True, None), (0, None), (-5, None),
     (math.nan, None), (math.inf, None), ("competitive", None),
+    # plain JSON integers past any float
+    pytest.param(10 ** 400, None, id="huge-int"), pytest.param("9" * 400, None, id="huge-digits"),
 ])
 def test_a_figure_is_read_only_when_it_cannot_be_misread(value, want):
     from openroles.models import amount

@@ -64,7 +64,10 @@ def _pay(detail: dict) -> str:
     for r in detail.get("payRangeDetails") or []:
         if isinstance(r, dict) and (r.get("rangeStart") is not None or r.get("rangeEnd") is not None):
             def num(v):
-                return f"{v:,.0f}" if isinstance(v, (int, float)) else clean(v)
+                try:
+                    return f"{v:,.0f}" if isinstance(v, (int, float)) else clean(v)
+                except OverflowError:
+                    return clean(v)
             span = "-".join(num(v) for v in (r.get("rangeStart"), r.get("rangeEnd")) if v is not None)
             return clean(f"{r.get('currency') or ''} {span} {clean(r.get('frequency')).lower().replace('_', ' ')}")
     return ""

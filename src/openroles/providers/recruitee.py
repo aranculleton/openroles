@@ -70,7 +70,7 @@ def _pay(offer: dict) -> str:
     def num(v):
         try:
             return f"{int(float(v)):,}"
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return clean(v)
     span = "-".join(num(v) for v in (lo, hi) if v not in (None, ""))
     return clean(f"{s.get('currency') or ''} {span} {clean(s.get('period')).replace('_', ' ')}")

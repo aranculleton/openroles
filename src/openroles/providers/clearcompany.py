@@ -54,7 +54,7 @@ def _pay(r: dict) -> str:
     def num(v):
         try:
             return f"{float(v):,.0f}"
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return clean(v)
     span = "-".join(num(v) for v in (lo, hi) if v)
     return clean(f"{span} {clean(r.get('salaryType')).lower()}")

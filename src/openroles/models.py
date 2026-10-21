@@ -171,7 +171,10 @@ def amount(value) -> Optional[float]:
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        x = float(value)
+        try:
+            x = float(value)
+        except OverflowError:       # an integer past any float: no salary is that
+            return None
     elif isinstance(value, str) and _AMOUNT.fullmatch(value) and not _DOT_THOUSANDS.fullmatch(value):
         x = float(value.replace(",", ""))
     else:

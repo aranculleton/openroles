@@ -17,7 +17,7 @@ from typing import Callable, Iterable, List, Optional, Tuple, Union
 from urllib.parse import quote, unquote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, iso_day, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, as_list, clean, html_to_text, iso_day, workplace_of
 
 PAGE = 20            # Workday serves at most 20 postings a page
 MAX_OFFSET = 2000    # and stops paging at an offset of 2,000
@@ -348,7 +348,7 @@ class WorkdayBoard:
         country = clean(place.get("descriptor")) if isinstance(place, dict) else ""
         labels = [with_country(info.get("location") or posting.get("locationsText")
                                or path_place(posting.get("externalPath")), country)]
-        labels += [with_country(a, country) for a in info.get("additionalLocations") or []
+        labels += [with_country(a, country) for a in as_list(info.get("additionalLocations"))
                    if isinstance(a, str)]
         labels = list(dict.fromkeys(x for x in labels if x))
         remote = clean(info.get("remoteType") or posting.get("remoteType")).lower()
@@ -361,7 +361,7 @@ class WorkdayBoard:
         job.posted = iso_day(info.get("startDate")) or job.posted
         job.employment_type = clean(info.get("timeType"))
         job.deadline = iso_day(info.get("endDate"))
-        job.description = html_to_text(str(info.get("jobDescription") or "")) or None
+        job.description = html_to_text(info.get("jobDescription")) or None
         return job
 
 

@@ -9,7 +9,19 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, html_to_text, iso_day, workplace_of
+from ..models import (
+    BoardError,
+    Job,
+    RobotsDisallowed,
+    as_dict,
+    as_list,
+    as_str,
+    clean,
+    html_to_text,
+    ident,
+    iso_day,
+    workplace_of,
+)
 
 HOST = "boards-api.greenhouse.io"
 # `content=true` returns every posting's body, departments and offices in the same request.
@@ -41,19 +53,22 @@ def fetch(token: str) -> List[Job]:
     for j in data["jobs"]:
         if not isinstance(j, dict):
             continue
-        location = clean((j.get("location") or {}).get("name"))
-        depts = [clean(d.get("name")) for d in j.get("departments") or [] if isinstance(d, dict)]
+        number, title = ident(j.get("id")), clean(j.get("title"))
+        if not number or not title:
+            continue
+        location = clean(as_dict(j.get("location")).get("name"))
+        depts = [clean(d.get("name")) for d in as_list(j.get("departments")) if isinstance(d, dict)]
         # A posting's location can be "Hybrid" or a time zone, with where the job is
         # recorded only under its offices; a filter by place read the first alone.
-        offices = [clean(o.get("location") or o.get("name")) for o in j.get("offices") or []
+        offices = [clean(o.get("location") or o.get("name")) for o in as_list(j.get("offices"))
                    if isinstance(o, dict)]
         every = list(dict.fromkeys(x for x in [location, *offices] if x))
         out.append(Job(
-            id=f"gh-{j.get('id')}",
+            id=f"gh-{number}",
             ats="greenhouse",
             board=token,
-            title=clean(j.get("title")),
-            url=j.get("absolute_url") or "",
+            title=title,
+            url=as_str(j.get("absolute_url")),
             location=location,
             locations=every,
             remote=True if "remote" in location.lower() else None,
@@ -62,7 +77,7 @@ def fetch(token: str) -> List[Job]:
             posted=iso_day(j.get("first_published"), j.get("updated_at")),
             department=next((d for d in depts if d), ""),
             deadline=iso_day(j.get("application_deadline")),
-            description=html_to_text(j.get("content") or "") or None,
+            description=html_to_text(j.get("content")) or None,
             workplace=workplace_of(location),
         ))
     return out

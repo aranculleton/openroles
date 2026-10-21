@@ -85,6 +85,15 @@ found in two places, and careers sites read however they write their JSON-LD.
   large for a float raised `OverflowError` (Recruitee, Rippling, ClearCompany and careers
   sites), and Rippling's list of pay ranges sent as a number or `true` raised `TypeError`.
   Neither is a `BoardError`, so `fetch()` lost every board it was reading.
+- **One posting's odd field no longer stops a whole board being read.** A field in a
+  shape its reader did not expect (a number where a list of locations or departments
+  belongs, text where an object does, an object where a description does) raised
+  `TypeError` or `AttributeError` out of `fetch()` on Greenhouse, Lever, Ashby, Recruitee,
+  Workable, Rippling, Workday, Gem and ClearCompany, and lost every board in the call.
+  Every reader now reads a field only in the shape it expects and gives the empty value
+  otherwise, so no field holds text the board never wrote ("{'name': 'Leeds'}", "True"),
+  and a posting whose id or title cannot be read is left out rather than given one such as
+  "gh-None".
 - **An answer nested too deep, or a Workday path no address can hold, no longer loses
   every board in the call.** JSON nested deeper than Python can follow (from a few hundred
   levels, depending on the Python version), from a board or in a careers page's script,

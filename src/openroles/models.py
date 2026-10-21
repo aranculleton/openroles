@@ -105,8 +105,10 @@ def _swap_tags(pattern, repl: str, s: str) -> str:
 
 
 def html_to_text(content: str) -> str:
-    """Plain text from an ATS's HTML, which some boards entity-encode twice."""
-    s = content or ""
+    """Plain text from an ATS's HTML, which some boards entity-encode twice. Anything a
+    board sends there that is not text (a number, an object, a list) gives "", never an
+    exception."""
+    s = content if isinstance(content, str) else ""
     for _ in range(3):
         un = html.unescape(s)
         if un == s:
@@ -145,8 +147,43 @@ def workplace_of(*values) -> str:
 
 
 def clean(value) -> str:
-    """One line of text, whitespace collapsed."""
+    """One line of text, whitespace collapsed, from a field a board writes as text or a
+    number. Anything else (an object, a list, true) is "": written out as Python shows it,
+    it came out as text nobody wrote ("{'name': 'Leeds'}", "True")."""
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return ""
     return " ".join(str(value or "").split())
+
+
+# A posting is one record from a board, and one odd field in it is no reason to lose the
+# board: each reader reads a field only in the shape it expects, and the empty value
+# otherwise.
+
+def as_list(value) -> list:
+    """A field a board writes as a list, or []."""
+    return value if isinstance(value, list) else []
+
+
+def as_dict(value) -> dict:
+    """A field a board writes as an object, or {}."""
+    return value if isinstance(value, dict) else {}
+
+
+def as_str(value) -> str:
+    """A field a board writes as text, as it stands (an address, a block of text), or ""."""
+    return value if isinstance(value, str) else ""
+
+
+def ident(value) -> str:
+    """A posting's own id as text: a whole number or text the board gives, or "" for
+    anything else (an object, a list, true, a fraction), which leaves the posting out. An
+    id written as None or an object came out as "None" or Python's view of the object,
+    the same for every such posting."""
+    if isinstance(value, bool):
+        return ""
+    if isinstance(value, int):
+        return str(value)
+    return value if isinstance(value, str) and value.strip() else ""
 
 
 _DAY = re.compile(r"\s*([0-9]{4})-([0-9]{2})-([0-9]{2})(?![0-9])")

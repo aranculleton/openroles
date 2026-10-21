@@ -12,7 +12,7 @@ from typing import List, Optional, Tuple
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, iso_day, pay, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, as_dict, as_list, as_str, clean, ident, iso_day, pay, workplace_of
 
 HOSTS = ("https://api.lever.co", "https://api.eu.lever.co")
 PATH = "/v0/postings/{token}?mode=json"
@@ -56,16 +56,16 @@ def _description(j: dict) -> Optional[str]:
 
     `descriptionPlain` alone is only the intro: the requirements live in `lists`.
     """
-    parts = [str(j.get("descriptionPlain") or "").strip()]
-    for block in j.get("lists") or []:
+    parts = [as_str(j.get("descriptionPlain")).strip()]
+    for block in as_list(j.get("lists")):
         if not isinstance(block, dict):
             continue
         from ..models import html_to_text
-        body = html_to_text(str(block.get("content") or ""))
+        body = html_to_text(block.get("content"))
         head = clean(block.get("text"))
         if head or body:
             parts.append(f"{head}\n{body}".strip())
-    parts.append(str(j.get("additionalPlain") or "").strip())
+    parts.append(as_str(j.get("additionalPlain")).strip())
     text = "\n\n".join(p for p in parts if p)
     return text or None
 
@@ -75,10 +75,11 @@ def _pay(j: dict) -> str:
     if not isinstance(r, dict) or (r.get("min") is None and r.get("max") is None):
         return ""
     lo, hi = r.get("min"), r.get("max")
+    one = lo if lo is not None else hi
     span = f"{lo:,}-{hi:,}" if isinstance(lo, (int, float)) and isinstance(hi, (int, float)) \
-        else str(lo if lo is not None else hi)
+        else str(one) if isinstance(one, (int, float)) and not isinstance(one, bool) else clean(one)
     unit = clean(r.get("interval")).replace("-", " ")
-    return clean(f"{r.get('currency') or ''} {span} {unit}")
+    return clean(f"{clean(r.get('currency'))} {span} {unit}")
 
 
 def _salary(j: dict) -> dict:
@@ -94,19 +95,22 @@ def fetch(token: str) -> List[Job]:
     for j in data:
         if not isinstance(j, dict):
             continue
-        cats = j.get("categories") or {}
+        number, title = ident(j.get("id")), clean(j.get("text"))
+        if not number or not title:
+            continue
+        cats = as_dict(j.get("categories"))
         location = clean(cats.get("location"))
         # Lever's docs do not say what an allLocations entry is: a name, or an object.
         every = [clean(x.get("location") or x.get("name")) if isinstance(x, dict) else clean(x)
-                 for x in cats.get("allLocations") or []]
+                 for x in as_list(cats.get("allLocations"))]
         every = list(dict.fromkeys(x for x in every if x))
         workplace = clean(j.get("workplaceType")).lower()
         out.append(Job(
-            id=f"lv-{j.get('id')}",
+            id=f"lv-{number}",
             ats="lever",
             board=token,
-            title=clean(j.get("text")),
-            url=j.get("hostedUrl") or "",
+            title=title,
+            url=as_str(j.get("hostedUrl")),
             location=location,
             locations=every or ([location] if location else []),
             remote=True if workplace == "remote" else (False if workplace in ("on-site", "onsite") else None),

@@ -287,7 +287,7 @@ def _pay(p: dict) -> str:
         except (TypeError, ValueError, OverflowError):
             return clean(x)
     span = "-".join(num(x) for x in (lo, hi) if x is not None)
-    return clean(f"{s.get('currency') or p.get('salarycurrency') or ''} {span} "
+    return clean(f"{clean(s.get('currency')) or clean(p.get('salarycurrency'))} {span} "
                  f"{clean(v.get('unittext')).lower()}")
 
 
@@ -301,7 +301,7 @@ def _salary(p: dict) -> dict:
     lo, hi = v.get("minvalue"), v.get("maxvalue")
     if lo is None and hi is None:
         lo = hi = v.get("value")
-    return pay(lo, hi, s.get("currency") or p.get("salarycurrency"), v.get("unittext"))
+    return pay(lo, hi, clean(s.get("currency")) or p.get("salarycurrency"), v.get("unittext"))
 
 
 def _job(token: str, page: str, p: dict) -> Optional[Job]:
@@ -327,7 +327,7 @@ def _job(token: str, page: str, p: dict) -> Optional[Job]:
         compensation=_pay(p),
         **_salary(p),
         deadline=_date(p.get("validthrough")),
-        description=html_to_text(str(p.get("description") or "")) or None,
+        description=html_to_text(p.get("description")) or None,
         workplace="remote" if remote else workplace_of(*places),
     )
 

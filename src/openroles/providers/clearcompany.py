@@ -12,7 +12,20 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, pay, workplace_of
+from ..models import (
+    BoardError,
+    Job,
+    RobotsDisallowed,
+    as_list,
+    as_str,
+    clean,
+    failed,
+    html_to_text,
+    ident,
+    iso_day,
+    pay,
+    workplace_of,
+)
 
 HOST = "careers-api.clearcompany.com"
 SITE_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
@@ -63,12 +76,11 @@ def _pay(r: dict) -> str:
 def fetch(token: str) -> List[Job]:
     out = []
     for r in _results(token):
-        title = clean(r.get("positionTitle"))
-        url = r.get("applyLink") or ""
-        if not title or not url:
+        number, title, url = ident(r.get("id")), clean(r.get("positionTitle")), as_str(r.get("applyLink"))
+        if not number or not title or not url:
             continue
         places, remote = [], False
-        for loc in r.get("locations") or []:
+        for loc in as_list(r.get("locations")):
             if not isinstance(loc, dict):
                 continue
             remote = remote or loc.get("isRemote") is True
@@ -79,7 +91,7 @@ def fetch(token: str) -> List[Job]:
                               else place)
         places = list(dict.fromkeys(places)) or ([clean(r.get("location"))] if clean(r.get("location")) else [])
         out.append(Job(
-            id=f"cc-{r.get('id')}",
+            id=f"cc-{number}",
             ats="clearcompany",
             board=token,
             title=title,
@@ -91,7 +103,7 @@ def fetch(token: str) -> List[Job]:
             department=clean(r.get("departmentName")),
             compensation=_pay(r),
             **pay(r.get("salaryRangeLow"), r.get("salaryRangeHigh"), "", r.get("salaryType")),
-            description=html_to_text(str(r.get("description") or "")) or None,
+            description=html_to_text(r.get("description")) or None,
             workplace="remote" if remote and all("remote" in p.lower() for p in places) else workplace_of(*places),
         ))
     return out

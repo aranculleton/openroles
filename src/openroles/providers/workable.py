@@ -16,7 +16,7 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, as_str, clean, failed, html_to_text, ident, iso_day, workplace_of
 
 HOST = "www.workable.com"
 URL = "https://www.workable.com/api/accounts/{token}?details=true"
@@ -47,14 +47,15 @@ def fetch(token: str) -> List[Job]:
         if not isinstance(j, dict):
             continue
         title = clean(j.get("title"))
-        url = j.get("application_url") or j.get("shortlink") or j.get("url") or ""
-        if not title or not url:
+        url = as_str(j.get("application_url")) or as_str(j.get("shortlink")) or as_str(j.get("url"))
+        code = ident(j.get("shortcode")) or ident(j.get("code")) or url.rstrip("/").rsplit("/", 1)[-1]
+        if not title or not url or not code:
             continue
         place = ", ".join(x for x in (clean(j.get("city")), clean(j.get("state")),
                                       clean(j.get("country"))) if x)
         workplace = workplace_of(j.get("workplace_type")) or ("remote" if j.get("telecommuting") else "")
         out.append(Job(
-            id=f"wk-{j.get('shortcode') or j.get('code') or url.rstrip('/').rsplit('/', 1)[-1]}",
+            id=f"wk-{code}",
             ats="workable",
             board=token,
             title=title,
@@ -65,7 +66,7 @@ def fetch(token: str) -> List[Job]:
             posted=iso_day(j.get("published_on"), j.get("created_at")),
             department=clean(j.get("department")),
             employment_type=clean(j.get("employment_type")),
-            description=html_to_text(j.get("description") or "") or None,
+            description=html_to_text(j.get("description")) or None,
             workplace=workplace,
         ))
     return out

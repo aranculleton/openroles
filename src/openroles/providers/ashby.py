@@ -8,7 +8,21 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, amount, clean, html_to_text, iso_day, pay, period_of, span, workplace_of
+from ..models import (
+    BoardError,
+    Job,
+    RobotsDisallowed,
+    amount,
+    as_str,
+    clean,
+    html_to_text,
+    ident,
+    iso_day,
+    pay,
+    period_of,
+    span,
+    workplace_of,
+)
 
 HOST = "api.ashbyhq.com"
 URL = "https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true"
@@ -107,8 +121,11 @@ def rows(token: str, data: object) -> List[Job]:
     for j in data["jobs"]:
         if not isinstance(j, dict) or j.get("isListed") is False:
             continue
+        number, title = ident(j.get("id")), clean(j.get("title"))
+        if not number or not title:
+            continue
         home = clean(_address(j).get("addressCountry"))
-        labels = [label(j)] + [label(s, home) for s in j.get("secondaryLocations") or []
+        labels = [label(j)] + [label(s, home) for s in _list(j.get("secondaryLocations"))
                                if isinstance(s, dict)]
         labels = list(dict.fromkeys(x for x in labels if x))
         # workplaceType is Ashby's current field; isRemote is the older flag, and only
@@ -119,11 +136,11 @@ def rows(token: str, data: object) -> List[Job]:
         else:
             remote = True if j.get("isRemote") is True else None
         out.append(Job(
-            id=f"ab-{j.get('id')}",
+            id=f"ab-{number}",
             ats="ashby",
             board=token,
-            title=clean(j.get("title")),
-            url=j.get("jobUrl") or "",
+            title=title,
+            url=as_str(j.get("jobUrl")),
             location="; ".join(labels),
             locations=labels,
             remote=remote,
@@ -135,14 +152,14 @@ def rows(token: str, data: object) -> List[Job]:
             compensation=_pay(j),
             **_salary(j),
             description=(clean_block(j.get("descriptionPlain"))
-                         or html_to_text(str(j.get("descriptionHtml") or "")) or None),
+                         or html_to_text(j.get("descriptionHtml")) or None),
             workplace=workplace_of(workplace) or ("remote" if remote else ""),
         ))
     return out
 
 
 def clean_block(text) -> str:
-    return str(text or "").strip()
+    return as_str(text).strip()
 
 
 def fetch(token: str) -> List[Job]:

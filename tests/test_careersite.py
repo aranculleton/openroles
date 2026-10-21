@@ -163,6 +163,42 @@ def test_a_script_wrapped_in_a_great_many_comment_lines_is_read_in_linear_time()
         assert [p["title"] for p in found] == want
 
 
+def test_a_page_of_script_tags_that_never_close_is_read_in_linear_time():
+    """An opening tag with no closing one after it, or a "<script" with no ">" after it,
+    sent the scan to the end of the page again for each one: 280 kB of the first took 30
+    seconds, and a page of 5 MB, the most a careers page is read to, could hold one read for
+    hours. The first two pages here took seconds each; every one now takes a fraction of
+    the bound."""
+    import time
+    opener = '<script type="application/ld+json">'
+    for page in (opener * 3_000, "<script a" * 6_000,
+                 opener * 140_000, "<script a" * 550_000, "<script a" * 550_000 + ">",
+                 "<script a" * 550_000 + f">{opener}{FLAT}</script>"):
+        start = time.perf_counter()
+        found = careersite.postings(page)
+        assert time.perf_counter() - start < 1.0, page[:40]
+    assert [p["title"] for p in found] == ["Demand Planner"]
+
+
+def test_the_scripts_found_are_the_ones_one_regular_expression_found():
+    """The scan replaced a single regular expression that was quadratic on hostile pages.
+    On pages built from the pieces that decide what it matched, it finds the same scripts:
+    case, a type written several ways, "<scripts", a type in another attribute, a closing
+    tag with a space in it, and characters whose lower case is longer than they are."""
+    import random
+    import re
+    whole = re.compile(r"<script\b[^>]*?\btype\s*=\s*[\"']?application/ld\+json\b[\"']?[^>]*>(.*?)</script>",
+                       re.I | re.S)
+    pieces = ["<script", "<SCRIPT", "<scripts", " type=", "type", "=", " ", "\n", "'", '"', ">", "<",
+              "application/ld+json", "application/ld+jsonx", "APPLICATION/LD+JSON", "</script>",
+              "</SCRIPT>", "</script >", "x", "data-", "İ", "ſ", FLAT,
+              "<script type=application/ld+json>"]
+    rnd = random.Random(7)
+    for _ in range(5_000):
+        page = "".join(rnd.choice(pieces) for _ in range(rnd.randint(0, 14)))
+        assert careersite._ld_scripts(page) == whole.findall(page), page
+
+
 def test_a_page_whose_description_keeps_its_line_breaks_is_a_role(web):
     site(web)
     lead = PLANNER.replace("Demand Planner", "Planning Lead")

@@ -35,10 +35,12 @@ MAX_SITEMAPS = 20       # sitemap files followed from an index
 # What a job page's address looks like on the systems this has been checked against:
 # /job/..., /jobs/123, /careers/job/..., /JobDetail/...
 JOB_PATH = re.compile(r"/(?:jobs?|jobdetail|vacanc(?:y|ies)|positions?|openings?)(?:/|-|$)", re.I)
-# The type may be quoted or not: HTML allows type=application/ld+json, and minified pages
-# write it that way.
-_LD = re.compile(r"<script\b[^>]*?\btype\s*=\s*[\"']?application/ld\+json\b[\"']?[^>]*>(.*?)</script>",
-                 re.I | re.S)
+# A JSON-LD script: its opening tag, the type in that tag, and the tag that closes it. The
+# type may be quoted or not: HTML allows type=application/ld+json, and minified pages write
+# it that way.
+_SCRIPT = re.compile(r"<script\b", re.I)
+_LD_TYPE = re.compile(r"\btype\s*=\s*[\"']?application/ld\+json\b", re.I)
+_SCRIPT_END = re.compile(r"</script>", re.I)
 # Lines some pages wrap a script in to hide it from older parsers: comment and CDATA markers.
 # The same tokens extruct's JSON-LD reader treats as framing (scrapinghub/extruct, BSD-3-Clause).
 _FRAMING = re.compile(r"//|/\*|\*/|<!--|--!?>|<!\[CDATA\[|\]\]>|\s+")
@@ -197,11 +199,39 @@ def json_values(block: str) -> list:
     return _leading(unescaped) if unescaped != unframed else []
 
 
+def _ld_scripts(html: str) -> List[str]:
+    """The text inside every JSON-LD script on a page, in order.
+
+    In one pass. A single regular expression for the whole script looked to the end of
+    the page for a closing tag after every opening one that had none, and for a ">" after
+    every "<script" that had none, so a hostile page of 5 MB could hold one read for hours.
+    Here each is looked for once: when none follows, no later script can be complete
+    either. What it finds is what that expression found."""
+    out, i = [], 0
+    while True:
+        opening = _SCRIPT.search(html, i)
+        if not opening:
+            return out
+        end = html.find(">", opening.end())
+        if end < 0:
+            return out
+        if not _LD_TYPE.search(html, opening.end(), end):
+            # Every "<script" before this ">" ends its tag here too, and none of them can
+            # hold a type this whole stretch does not.
+            i = end + 1
+            continue
+        closing = _SCRIPT_END.search(html, end + 1)
+        if not closing:
+            return out
+        out.append(html[end + 1:closing.start()])
+        i = closing.end()
+
+
 def postings(html: str) -> List[dict]:
     """Every schema.org JobPosting in a page's JSON-LD, keys lower-cased (some sites write
     "DatePosted")."""
     out = []
-    for block in _LD.findall(html or ""):
+    for block in _ld_scripts(html or ""):
         stack = [_lower(data) for data in json_values(block)]
         while stack:
             node = stack.pop()

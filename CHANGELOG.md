@@ -39,6 +39,9 @@
   0.2.0 had the same flaw in memory, for the life of a process.
 - **The cache folder keeps to its 500 MB after every write, not only after every 500th,**
   and a run that gets only 304s still drops what has gone unused for 30 days.
+- **A kept answer goes only to a request like the one it answered.** It is kept by
+  address and `Accept`, and one longer than a caller's size limit is read afresh for that
+  caller, as an uncached read would be, instead of being handed back whole on a 304.
 - **`posted` and `deadline` are always a real `YYYY-MM-DD`, or empty.** Every reader cut
   the board's value to ten characters, so a date written another way ("1/9/2026") came out
   as text that `since_days` compared as older than any real date, and the role was dropped

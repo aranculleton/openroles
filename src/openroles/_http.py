@@ -45,29 +45,32 @@ def _slot(host: str) -> threading.BoundedSemaphore:
         return _SLOTS.setdefault(host.lower(), threading.BoundedSemaphore(PER_HOST))
 
 
-# A GET's last answer, by URL, for hosts that send an ETag or a Last-Modified date: read
-# again, the request carries them and an unchanged answer is a 304 with no body.
+# A GET's last answer, for hosts that send an ETag or a Last-Modified date: read again, the
+# request carries them and an unchanged answer is a 304 with no body. Kept by address and
+# the Accept it was asked with, since one address can answer JSON to one and HTML to
+# another, and a host that only sends Last-Modified would answer 304 to both.
 ETAG_BYTES = 32_000_000
-_ETAGS: OrderedDict = OrderedDict()   # url -> (etag, last modified, body), oldest first
+_ETAGS: OrderedDict = OrderedDict()   # (url, accept) -> (etag, last modified, body), oldest first
 _ETAG_LOCK = threading.Lock()
+Key = Tuple[str, str]
 
 
-def _remember(url: str, etag: str, body: str, modified: str = "") -> None:
+def _remember(key: Key, etag: str, body: str, modified: str = "") -> None:
     with _ETAG_LOCK:
-        _ETAGS.pop(url, None)
-        _ETAGS[url] = (etag, modified, body)
+        _ETAGS.pop(key, None)
+        _ETAGS[key] = (etag, modified, body)
         size = sum(len(entry[-1]) for entry in _ETAGS.values())
         while _ETAGS and size > ETAG_BYTES:
             _, gone = _ETAGS.popitem(last=False)
             size -= len(gone[-1])
 
 
-def _forget(url: str) -> None:
+def _forget(key: Key) -> None:
     with _ETAG_LOCK:
-        _ETAGS.pop(url, None)
+        _ETAGS.pop(key, None)
     if CACHE_DIR:
         try:
-            os.remove(_cache_file(url))
+            os.remove(_cache_file(key))
         except OSError:
             pass
 
@@ -111,23 +114,24 @@ def _this_format(v) -> bool:
     return isinstance(v, int) and not isinstance(v, bool) and v == CACHE_FORMAT
 
 
-def _cache_file(url: str) -> str:
-    name = hashlib.sha256(url.encode("utf-8")).hexdigest() + ".json.gz"
+def _cache_file(key: Key) -> str:
+    name = hashlib.sha256(json.dumps(list(key)).encode("utf-8")).hexdigest() + ".json.gz"
     return os.path.join(CACHE_DIR, "http", name)
 
 
-def _disk_get(url: str) -> Optional[Tuple[str, str, str]]:
-    """(etag, last modified, body) kept on disk for `url`, or None. An unreadable or
-    foreign file is a miss, never an error."""
+def _disk_get(key: Key) -> Optional[Tuple[str, str, str]]:
+    """(etag, last modified, body) kept on disk for (url, accept), or None. An unreadable
+    or foreign file is a miss, never an error."""
     if not CACHE_DIR:
         return None
     _tidy(os.path.join(CACHE_DIR, "http"))
     try:
-        with gzip.open(_cache_file(url), "rt", encoding="utf-8") as fh:
+        with gzip.open(_cache_file(key), "rt", encoding="utf-8") as fh:
             entry = json.load(fh)
     except (OSError, EOFError, ValueError, zlib.error, RecursionError):
         return None
-    if not isinstance(entry, dict) or not _this_format(entry.get("v")) or entry.get("url") != url:
+    if not isinstance(entry, dict) or not _this_format(entry.get("v")) or \
+            (entry.get("url"), entry.get("accept")) != key:
         return None
     etag, modified, body = (entry.get(k) for k in ("etag", "last_modified", "body"))
     if not all(isinstance(x, str) for x in (etag, modified, body)) or not (etag or modified):
@@ -135,18 +139,18 @@ def _disk_get(url: str) -> Optional[Tuple[str, str, str]]:
     return etag, modified, body
 
 
-def _disk_put(url: str, etag: str, modified: str, body: str) -> None:
+def _disk_put(key: Key, etag: str, modified: str, body: str) -> None:
     if not CACHE_DIR:
         return
     folder = os.path.join(CACHE_DIR, "http")
-    path = _cache_file(url)
+    path = _cache_file(key)
     tmp = ""
     try:
         os.makedirs(folder, mode=0o700, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=folder, suffix=".tmp")      # owner-only
         with os.fdopen(fd, "wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as fh:
-            fh.write(json.dumps({"v": CACHE_FORMAT, "url": url, "etag": etag,
-                                 "last_modified": modified, "body": body},
+            fh.write(json.dumps({"v": CACHE_FORMAT, "url": key[0], "accept": key[1],
+                                 "etag": etag, "last_modified": modified, "body": body},
                                 ensure_ascii=False).encode("utf-8"))
         grown = os.path.getsize(tmp)
         try:
@@ -179,16 +183,16 @@ def _tidy(folder: str, grown: int = 0) -> None:
         _TIDY[folder] = [prune(folder), now]
 
 
-def _touch(url: str, etag: str, modified: str, body: str) -> None:
+def _touch(key: Key, etag: str, modified: str, body: str) -> None:
     """An answer asked for again counts as recent, so pruning keeps what is in use; one
     known only in memory (the folder was named after it was read) is written down."""
     if not CACHE_DIR:
         return
     _tidy(os.path.join(CACHE_DIR, "http"))
     try:
-        os.utime(_cache_file(url))
+        os.utime(_cache_file(key))
     except OSError:
-        _disk_put(url, etag, modified, body)
+        _disk_put(key, etag, modified, body)
 
 
 def prune(folder: str, now: Optional[float] = None) -> int:
@@ -338,15 +342,15 @@ def request_raw(url: str, payload: Optional[dict] = None,
     return body, err
 
 
-def _kept_again(url: str, cached: tuple) -> None:
+def _kept_again(key: Key, cached: tuple) -> None:
     """A kept answer a 304 sent back and that was read: recent again, in memory and on disk."""
-    _remember(url, cached[0], cached[2], cached[1])
-    _touch(url, *cached)
+    _remember(key, cached[0], cached[2], cached[1])
+    _touch(key, *cached)
 
 
 def _get(url: str, payload: Optional[dict] = None, accept: str = "*/*",
          limit: int = 100_000_000):
-    """request_raw, and (the address, the kept answer) when a 304 sent the body back
+    """request_raw, and ((url, accept), the kept answer) when a 304 sent the body back
     from what was kept, else None."""
     # gzip: a large board's JSON is a third of the size on the wire.
     headers = {"User-Agent": USER_AGENT, "Accept": accept, "Accept-Encoding": "gzip"}
@@ -373,17 +377,29 @@ def _get(url: str, payload: Optional[dict] = None, accept: str = "*/*",
     return "", f"more than {MAX_REDIRECTS} redirects", None
 
 
+def _fits(body: str, limit: int) -> bool:
+    """Whether `body` is within `limit` bytes, as a fresh read would count it."""
+    return len(body) * 4 <= limit or len(body.encode("utf-8")) <= limit
+
+
 def _one(url: str, data, headers: dict, limit: int):
     """(body, None, None, served), ("", why, None, None), or ("", None, (next url, status),
-    None) for a redirect. `served` is (url, the kept answer) when a 304 sent the body back
-    from what was kept: the caller marks it used once it has read it."""
+    None) for a redirect. `served` is ((url, accept), the kept answer) when a 304 sent the
+    body back from what was kept: the caller marks it used once it has read it."""
     headers = dict(headers)
     host = urllib.parse.urlsplit(url).netloc
+    key = (url, headers.get("Accept", ""))
     cached = None
     if data is None:                 # a POST is never answered from what was kept
         with _ETAG_LOCK:
-            cached = _ETAGS.get(url)
-        cached = cached or _disk_get(url)
+            cached = _ETAGS.get(key)
+        cached = cached or _disk_get(key)
+        # A kept answer longer than this caller's `limit` is not what it would be given:
+        # read afresh, the body is cut at the limit. So it is not asked about, and the copy
+        # stays for the caller that can take it. (The limit is not part of the key: the
+        # same page under two limits is one answer whenever it fits both.)
+        if cached and not _fits(cached[2], limit):
+            cached = None
     if cached:
         if cached[0]:
             headers["If-None-Match"] = cached[0]
@@ -404,14 +420,14 @@ def _one(url: str, data, headers: dict, limit: int):
                     body, whole = _read(fh, limit)
                     keep = _validators(fh.headers) if data is None and whole else None
             if keep:
-                _remember(url, keep[0], body, keep[1])
-                _disk_put(url, keep[0], keep[1], body)
+                _remember(key, keep[0], body, keep[1])
+                _disk_put(key, keep[0], keep[1], body)
             elif cached:
-                _forget(url)         # what was kept no longer describes this answer
+                _forget(key)         # what was kept no longer describes this answer
             return body, None, None, None
         except urllib.error.HTTPError as e:
             if e.code == 304 and cached:
-                return cached[2], None, None, (url, cached)
+                return cached[2], None, None, (key, cached)
             if e.code in REDIRECTS and e.headers and e.headers.get("Location"):
                 return "", None, (urllib.parse.urljoin(url, e.headers["Location"]), e.code), None
             err = f"HTTP {e.code}"

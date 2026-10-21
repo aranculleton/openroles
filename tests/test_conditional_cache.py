@@ -370,3 +370,38 @@ def test_a_run_of_only_304s_still_keeps_the_folder_to_its_caps(monkeypatch, tmp_
     assert board.sent[-1] == ('"v1"', None)                     # a 304: nothing was written
     assert not old.exists() and folder_bytes(tmp_path) <= 900
     assert len(files(tmp_path)) == 2                            # the one in use, and the newest
+
+
+# ------------------------------------------------------------------ what the caller asked for
+
+def test_a_kept_body_longer_than_the_caller_s_limit_is_not_what_it_gets(monkeypatch, tmp_path):
+    openroles.configure(cache_dir=tmp_path)
+    board = Board(monkeypatch, body=b"x" * 5_000)
+    assert len(_http.request_raw(URL, limit=1_000_000)[0]) == 5_000
+    body, err = _http.request_raw(URL, limit=100)
+    assert err is None and body == "x" * 100                    # as a fresh read cuts it
+    assert board.sent[-1] == (None, None)
+    assert len(_http.request_raw(URL, limit=1_000_000)[0]) == 5_000
+    assert board.sent[-1] == ('"v1"', None)                     # and the whole copy stayed
+
+
+def test_an_answer_kept_for_one_accept_is_not_given_to_another(monkeypatch, tmp_path):
+    """A host that only sends Last-Modified answers 304 whatever was asked for."""
+    openroles.configure(cache_dir=tmp_path)
+    modified = "Tue, 20 Oct 2026 09:00:00 GMT"
+    sent = []
+
+    def urlopen(req, timeout=0):
+        sent.append((req.get_header("Accept"), req.get_header("If-modified-since")))
+        if req.get_header("If-modified-since") == modified:
+            raise urllib.error.HTTPError(req.full_url, 304, "Not Modified", {}, None)
+        html = "html" in req.get_header("Accept")
+        return Answer(b"<html>page</html>" if html else b'{"jobs": [1]}', {"Last-Modified": modified})
+    monkeypatch.setattr(_http, "_urlopen", urlopen)
+    assert _http.request(URL) == ({"jobs": [1]}, None)
+    assert _http.request_raw(URL, accept="text/html") == ("<html>page</html>", None)
+    new_process(monkeypatch)
+    assert _http.request(URL) == ({"jobs": [1]}, None)
+    assert _http.request_raw(URL, accept="text/html") == ("<html>page</html>", None)
+    assert sent == [("application/json", None), ("text/html", None),
+                    ("application/json", modified), ("text/html", modified)]

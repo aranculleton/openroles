@@ -101,10 +101,11 @@ openroles.configure(
 ```
 
 With `cache_dir`, each board's last answer is kept with the `ETag` or `Last-Modified` date
-the board sent, and the next run asks with them: a board that has not changed answers
-`304 Not Modified` and sends nothing, and the kept copy is read instead. Every read still
-asks the board. It is off by default; only GET answers are kept, never one marked
-`no-store`, in owner-only files, at most 500 MB and for 30 days unused.
+the board sent, and the next run asks with them: a board that honours them and has not
+changed answers `304 Not Modified` and sends nothing, and the kept copy is read instead.
+Every read still asks the board. It is off by default; only GET answers that arrived whole
+are kept, never one marked `no-store`, in owner-only files, at most 500 MB and for 30 days
+unused.
 
 Everything a search decides for itself stays a parameter: `query`, `location`, `remote`,
 `since_days`, `country`, and `details`, which can be a function that says which postings
@@ -155,7 +156,7 @@ Every role, from every system, has the same fields:
 | `posted` | `YYYY-MM-DD`, first published (not last edited) where the system says; see below |
 | `department`, `employment_type` | where the board provides them |
 | `compensation` | the posted pay band, where the employer publishes one, as the board words it |
-| `salary_min`, `salary_max`, `salary_currency`, `salary_period` | the same band as numbers, its ISO currency code and `hour`, `day`, `week`, `month` or `year`, only where the board publishes them as numbers (Lever, Ashby, Recruitee, Rippling, ClearCompany, careers sites); never read out of a description |
+| `salary_min`, `salary_max`, `salary_currency`, `salary_period` | the same band as numbers, its ISO currency code and `hour`, `day`, `week`, `month`, `year` or `""` (a period such as every two weeks), only where the board publishes them as numbers (Lever, Ashby, Recruitee, Rippling, ClearCompany, careers sites); never read out of a description |
 | `deadline` | where the board provides one |
 | `description` | plain text, HTML removed |
 

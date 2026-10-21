@@ -7,10 +7,10 @@
 - **A board that has not changed since the last run sends nothing.** With
   `openroles.configure(cache_dir=...)` (CLI `--cache DIR`), each board's last answer is
   kept with the `ETag` or `Last-Modified` date it came with, and the next run asks with
-  them; Greenhouse and Lever, among others, answer `304 Not Modified`. Every read still
-  asks the board. Off by default. Only GET answers are kept, never one marked `no-store`
-  or cut at the size limit, in owner-only files named for a hash of the address, at most
-  500 MB and for 30 days unused.
+  them; a board that honours them and has not changed answers `304 Not Modified`. Every
+  read still asks the board. Off by default. Only GET answers are kept, never one marked
+  `no-store`, cut at the size limit or cut short, in owner-only files named for a hash of
+  the request, at most 500 MB and for 30 days unused.
 - **`openroles.job_id(url)` gives a posting's id from its address alone.** The same `Job.id`
   a board read gives it, so a posting found on a job site whose link goes to the employer's
   board can be matched to the copy read from that board, with nothing fetched. Greenhouse
@@ -77,8 +77,10 @@
   A description pasted with its line breaks left a raw newline inside a JSON string, which
   a strict reader refused, so the page read as having no `JobPosting`. Also read now: a
   `type` written without quotes, a script wrapped in comment or CDATA lines, one
-  entity-encoded as a whole, and a stray semicolon after it. The cases are the ones
-  extruct's JSON-LD reader handles (BSD-3-Clause), written afresh.
+  entity-encoded as a whole, and a stray semicolon after it. These are some of the
+  repairs extruct's JSON-LD reader makes (scrapinghub/extruct, BSD-3-Clause); extruct
+  also strips JavaScript comments and trailing commas and mends escapes and stray quotes,
+  which openroles does not.
 
 ## 0.2.0 (2026-10-19)
 

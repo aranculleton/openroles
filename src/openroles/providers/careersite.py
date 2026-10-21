@@ -40,6 +40,7 @@ JOB_PATH = re.compile(r"/(?:jobs?|jobdetail|vacanc(?:y|ies)|positions?|openings?
 _LD = re.compile(r"<script\b[^>]*?\btype\s*=\s*[\"']?application/ld\+json\b[\"']?[^>]*>(.*?)</script>",
                  re.I | re.S)
 # Lines some pages wrap a script in to hide it from older parsers: comment and CDATA markers.
+# The same tokens extruct's JSON-LD reader treats as framing (scrapinghub/extruct, BSD-3-Clause).
 _FRAMING = re.compile(r"//|/\*|\*/|<!--|--!?>|<!\[CDATA\[|\]\]>|\s+")
 
 
@@ -179,8 +180,10 @@ def json_values(block: str) -> list:
     raw newline inside a JSON string, which strict JSON refuses, so the page read as
     having no JobPosting. Also read: a script wrapped in comment or CDATA lines, one
     HTML-entity-encoded as a whole, and junk after a complete value. Nothing is guessed
-    beyond that; a script still unreadable gives nothing. The cases are the ones
-    extruct's JSON-LD reader handles (scrapinghub/extruct, BSD-3-Clause), written afresh.
+    beyond that; a script still unreadable gives nothing. These are some of the repairs
+    extruct's JSON-LD reader makes (scrapinghub/extruct, BSD-3-Clause); it also strips
+    JavaScript comments and trailing commas and mends escapes and stray quotes, which are
+    guesses and are left out here.
     """
     text = block.strip()
     found = _leading(text)

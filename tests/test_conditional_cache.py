@@ -31,10 +31,12 @@ class Answer(io.BytesIO):
 
 class Board:
     """One URL's answers: a body, the validators it is served with, and a record of the
-    validators each request sent."""
+    validators each request sent. Each answer gives its Content-Length, as a server's
+    normally does, unless `length` is False."""
 
-    def __init__(self, monkeypatch, body=b'{"jobs": [1]}', headers=None):
+    def __init__(self, monkeypatch, body=b'{"jobs": [1]}', headers=None, length=True):
         self.body, self.headers, self.sent = body, dict(headers or {"ETag": '"v1"'}), []
+        self.length = length
         monkeypatch.setattr(_http, "_urlopen", self.urlopen)
 
     def urlopen(self, req, timeout=0):
@@ -43,7 +45,10 @@ class Board:
         etag, modified = self.headers.get("ETag"), self.headers.get("Last-Modified")
         if (etag and asked[0] == etag) or (modified and not etag and asked[1] == modified):
             raise urllib.error.HTTPError(req.full_url, 304, "Not Modified", {}, None)
-        return Answer(self.body, self.headers)
+        headers = dict(self.headers)
+        if self.length:
+            headers.setdefault("Content-Length", str(len(self.body)))
+        return Answer(self.body, headers)
 
 
 def new_process(monkeypatch):
@@ -274,6 +279,95 @@ def test_a_body_cut_short_on_a_real_connection_is_never_kept(monkeypatch, tmp_pa
     assert sent == [None, None] and files(tmp_path) == []
 
 
+def local_board(monkeypatch, answer):
+    """A server on this machine whose GET handler is `answer(handler, n)` for the n-th
+    request, read through http.client itself. Returns (url, the If-None-Match each request
+    sent, a stop function)."""
+    import http.server
+    import threading
+    import urllib.request
+
+    sent = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self):
+            sent.append(self.headers.get("If-None-Match"))
+            answer(self, len(sent))
+            self.close_connection = True
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05},
+                     daemon=True).start()
+    direct = urllib.request.build_opener(urllib.request.ProxyHandler({}), _http._HandBack)
+    monkeypatch.setattr(_http, "_urlopen", lambda req, timeout: direct.open(req, timeout=timeout))
+
+    def stop():
+        server.shutdown()
+        server.server_close()
+    return f"http://127.0.0.1:{server.server_port}/jobs", sent, stop
+
+
+def test_a_body_that_gives_no_length_and_is_cut_short_is_never_kept(monkeypatch, tmp_path):
+    """An answer with no Content-Length that is not chunked ends when the connection
+    closes, and one dropped halfway ends the same way: the half was kept and sent back on
+    every 304 until the board changed."""
+    def answer(handler, n):
+        handler.send_response(200)
+        handler.send_header("ETag", '"v1"')
+        handler.send_header("Connection", "close")
+        handler.end_headers()
+        handler.wfile.write(JOBS if n > 1 else JOBS[:len(JOBS) // 2])
+    url, sent, stop = local_board(monkeypatch, answer)
+    try:
+        openroles.configure(cache_dir=tmp_path)
+        assert _http.request_raw(url)[0] == JOBS[:len(JOBS) // 2].decode()
+        assert _http.request_raw(url)[0] == JOBS.decode()          # asked afresh
+        new_process(monkeypatch)
+        assert _http.request_raw(url)[0] == JOBS.decode()
+    finally:
+        stop()
+    assert sent == [None, None, None] and files(tmp_path) == []
+
+
+def test_a_chunked_answer_and_a_whole_gzip_stream_are_kept_with_no_length(monkeypatch, tmp_path):
+    """Both show for themselves that all of the body came: a chunked answer cut short
+    raises, and a gzip stream has an end."""
+    zipped = gzip.compress(JOBS)
+
+    def answer(handler, n):
+        if handler.headers.get("If-None-Match") == '"v1"':
+            handler.send_response(304)
+            handler.send_header("ETag", '"v1"')
+            handler.end_headers()
+            return
+        handler.send_response(200)
+        handler.send_header("ETag", '"v1"')
+        if handler.path.endswith("gz"):
+            handler.send_header("Content-Encoding", "gzip")
+            handler.send_header("Connection", "close")
+            handler.end_headers()
+            handler.wfile.write(zipped)
+        else:
+            handler.send_header("Transfer-Encoding", "chunked")
+            handler.end_headers()
+            handler.wfile.write(b"%x\r\n%s\r\n0\r\n\r\n" % (len(JOBS), JOBS))
+    url, sent, stop = local_board(monkeypatch, answer)
+    try:
+        openroles.configure(cache_dir=tmp_path)
+        for address in (url, url + "?gz"):
+            assert _http.request_raw(address)[0] == JOBS.decode()
+            new_process(monkeypatch)
+            assert _http.request_raw(address)[0] == JOBS.decode()
+    finally:
+        stop()
+    assert sent == [None, '"v1"', None, '"v1"'] and len(files(tmp_path)) == 2
+
+
 def test_a_kept_answer_a_304_sends_back_that_is_not_json_is_read_afresh(monkeypatch, tmp_path):
     """A damaged kept copy would otherwise be served on every 304 until the board changed."""
     openroles.configure(cache_dir=tmp_path)
@@ -458,8 +552,8 @@ def test_an_answer_kept_for_one_accept_is_not_given_to_another(monkeypatch, tmp_
         sent.append((req.get_header("Accept"), req.get_header("If-modified-since")))
         if req.get_header("If-modified-since") == modified:
             raise urllib.error.HTTPError(req.full_url, 304, "Not Modified", {}, None)
-        html = "html" in req.get_header("Accept")
-        return Answer(b"<html>page</html>" if html else b'{"jobs": [1]}', {"Last-Modified": modified})
+        body = b"<html>page</html>" if "html" in req.get_header("Accept") else b'{"jobs": [1]}'
+        return Answer(body, {"Last-Modified": modified, "Content-Length": str(len(body))})
     monkeypatch.setattr(_http, "_urlopen", urlopen)
     assert _http.request(URL) == ({"jobs": [1]}, None)
     assert _http.request_raw(URL, accept="text/html") == ("<html>page</html>", None)

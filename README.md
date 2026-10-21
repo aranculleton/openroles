@@ -103,9 +103,12 @@ openroles.configure(
 With `cache_dir`, each board's last answer is kept with the `ETag` or `Last-Modified` date
 the board sent, and the next run asks with them: a board that honours them and has not
 changed answers `304 Not Modified` and sends nothing, and the kept copy is read instead.
-Every read still asks the board. It is off by default; only GET answers that arrived whole
-are kept, never one marked `no-store`, in owner-only files, at most 500 MB and for 30 days
-unused.
+Every read still asks the board. It is off by default. An answer is kept only when it is
+a GET, is not marked `no-store`, and shows that all of it arrived: all of its
+`Content-Length`, every chunk of a chunked answer, or a gzip stream to its end. One that
+gives no length and is neither chunked nor gzipped ends when the connection closes, cut
+short or not, so it is read in full every time. Kept answers are in owner-only files, at
+most 500 MB and for 30 days unused.
 
 Everything a search decides for itself stays a parameter: `query`, `location`, `remote`,
 `since_days`, `country`, and `details`, which can be a function that says which postings

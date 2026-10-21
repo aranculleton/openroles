@@ -268,11 +268,14 @@ def _wait_turn(host: str) -> None:
         time.sleep(start - now)
 
 
-def _all_arrived(fh, got: int) -> bool:
-    """Whether every byte the answer declared arrived. With a size to read, http.client
-    hands back a short read with no error when the connection drops (its own comment says
-    it does not raise IncompleteRead, for compatibility), so the declared Content-Length
-    is the only sign a body was cut short. A chunked answer that drops raises instead."""
+def _all_arrived(fh, got: int) -> Optional[bool]:
+    """Whether the answer's own framing shows every byte arrived: True for a chunked
+    answer or one that got all of its Content-Length, False for one short of it, and None
+    for one that says neither. With a size to read, http.client hands back a short read
+    with no error when the connection drops (its own comment says it does not raise
+    IncompleteRead, for compatibility), so the declared Content-Length is the only sign a
+    body was cut short. A chunked answer that drops raises instead. An answer with neither
+    ends when the connection closes, and one dropped halfway ends the same way."""
     left = getattr(fh, "length", None)          # what http.client still expected
     if isinstance(left, int) and left > 0:
         return False
@@ -282,16 +285,18 @@ def _all_arrived(fh, got: int) -> bool:
     declared = (headers.get("Content-Length") or "").strip()
     if declared.isascii() and declared.isdigit():
         return got == int(declared)
-    return True
+    return None
 
 
 def _read(fh, limit: int) -> Tuple[str, bool]:
     """(the response body as text, unzipped when it came gzipped, at most `limit` bytes;
-    whether that is provably all of it). Only a whole body is ever kept for next time: not
-    one cut at the limit, not one short of its Content-Length, and not a gzip stream that
-    stops before its end."""
+    whether that is provably all of it). Only a body shown to be whole is ever kept for
+    next time: not one cut at the limit, not one short of its Content-Length, not a gzip
+    stream that stops before its end, and not a plain body that gives no length and is
+    not chunked, since nothing shows whether all of it came."""
     raw = fh.read(limit)
-    whole = len(raw) < limit and _all_arrived(fh, len(raw))
+    arrived = _all_arrived(fh, len(raw))
+    whole = len(raw) < limit and arrived is not False
     if (fh.headers.get("Content-Encoding") or "").lower() == "gzip":
         unzip = zlib.decompressobj(16 + zlib.MAX_WBITS)
         try:
@@ -299,10 +304,12 @@ def _read(fh, limit: int) -> Tuple[str, bool]:
         except zlib.error as e:
             raise gzip.BadGzipFile(f"the gzipped body could not be unzipped ({e})") from e
         # A stream cut off by the network unzips to a prefix with no error at all; only
-        # reaching the stream's end shows it was all there.
+        # reaching the stream's end shows it was all there, with or without a length.
         whole = (whole and unzip.eof and not unzip.unconsumed_tail
                  and not unzip.unused_data.strip(b"\0") and len(raw) < limit)
         raw = raw[:limit]
+    else:
+        whole = whole and arrived is True
     return raw.decode("utf-8", "replace"), whole
 
 

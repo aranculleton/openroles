@@ -101,6 +101,11 @@ CACHE_DAYS = 30
 # The total starts from the look, so another process writing to the same folder at the same
 # time is counted at this one's next look.
 PRUNE_SECONDS = 3600
+# A look that finds the folder over CACHE_BYTES takes it down to this share of it. Taken
+# down only to the cap, the next write passed it again, and every write after that looked
+# at the whole folder (a scan, a stat of every file and a sort) while holding the lock
+# every read waits on.
+PRUNE_TO = 0.9
 # Written into every file. A file without it, or with another, is a miss and is replaced on
 # the next full answer: so a release that changes what a file means, or one that must not
 # trust what an earlier build wrote (before 0.3.0 a body cut short by the network could be
@@ -196,8 +201,9 @@ def _touch(key: Key, etag: str, modified: str, body: str) -> None:
 
 
 def prune(folder: str, now: Optional[float] = None) -> int:
-    """Answers older than CACHE_DAYS go, then the oldest until the folder is under
-    CACHE_BYTES; a write cut off more than an hour ago goes too. The bytes kept."""
+    """Answers older than CACHE_DAYS go, and when the folder holds more than CACHE_BYTES,
+    the oldest until it holds PRUNE_TO of it; a write cut off more than an hour ago goes
+    too. The bytes kept."""
     now = time.time() if now is None else now
     try:
         entries = list(os.scandir(folder))
@@ -219,8 +225,9 @@ def prune(folder: str, now: Optional[float] = None) -> int:
         elif e.name.endswith(".json.gz"):
             kept.append((st.st_mtime, st.st_size, e.path))
     total = sum(size for _, size, _ in kept)
+    goal = CACHE_BYTES * PRUNE_TO if total > CACHE_BYTES else total
     for _, size, path in sorted(kept):
-        if total <= CACHE_BYTES:
+        if total <= goal:
             break
         try:
             os.remove(path)

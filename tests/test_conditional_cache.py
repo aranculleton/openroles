@@ -351,6 +351,26 @@ def test_the_size_cap_holds_after_every_write_not_only_some(monkeypatch, tmp_pat
         assert folder_bytes(tmp_path) <= 10_000
 
 
+def test_a_full_folder_is_not_looked_at_whole_on_every_write(monkeypatch, tmp_path):
+    """Taken down only to its cap, the folder passed it again on the next write, and every
+    write after that scanned, stat-ed and sorted the whole folder while reads waited."""
+    import random
+    openroles.configure(cache_dir=tmp_path)
+    monkeypatch.setattr(_http, "CACHE_BYTES", 20_000)
+    looks = []
+    whole = _http.prune
+    monkeypatch.setattr(_http, "prune", lambda folder, now=None: looks.append(folder) or whole(folder, now))
+    board = Board(monkeypatch)
+    for i in range(200):
+        board.body = random.Random(i).getrandbits(8 * 300).to_bytes(300, "big").hex().encode()
+        _http.request_raw(f"{URL}?page={i}")
+        assert folder_bytes(tmp_path) <= 20_000                 # the cap still holds
+        if i == 99:                                             # the folder has long been full
+            looks.clear()
+    # 100 writes of about 500 bytes each: a look every tenth of the cap, not 100 of them.
+    assert 0 < len(looks) <= 30
+
+
 def test_a_run_of_only_304s_still_keeps_the_folder_to_its_caps(monkeypatch, tmp_path):
     openroles.configure(cache_dir=tmp_path)
     board = Board(monkeypatch)

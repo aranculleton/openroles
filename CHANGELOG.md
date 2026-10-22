@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **A kept page that is not all UTF-8 is asked about again under a limit it fits.** Each
+  byte that is not UTF-8 is read as one three-byte replacement character, so a page was
+  measured by its text at up to three times the bytes it came in, and one near a caller's
+  size limit was read afresh every time instead of being asked about. Each kept answer now
+  keeps the number of bytes it was read from, in memory and on disk, and is measured by
+  that. A copy kept by 0.3.0, without it, is measured by its text as before, which never
+  says a page fits that does not.
+
 ## 0.3.0 (2026-10-21)
 
 Pay as numbers, a cache that spares a board that has not changed, one id for a posting

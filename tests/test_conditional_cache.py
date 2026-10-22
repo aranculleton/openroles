@@ -682,3 +682,44 @@ def test_a_folder_that_is_not_text_or_a_path_is_refused_when_it_is_named(tmp_pat
         with pytest.raises(ValueError):
             openroles.configure(cache_dir=wrong)
         assert _http.CACHE_DIR == str(tmp_path)                 # left as it was
+
+
+def test_a_page_that_is_not_utf8_is_asked_about_again_under_a_limit_it_fits(monkeypatch, tmp_path):
+    # Each byte that is not UTF-8 is read as one three-byte replacement character, so a
+    # 2,000-byte Latin-1 page measured 6,000 by its text and, under a 5,000-byte limit,
+    # was never asked about again. It is measured by the bytes it was read from.
+    board = Board(monkeypatch, body=b"\xe9" * 2_000)
+    first, err = _http.request_raw(URL, limit=5_000)
+    assert err is None and len(first) == 2_000 and len(first.encode("utf-8")) == 6_000
+    assert _http.request_raw(URL, limit=5_000) == (first, None)
+    assert board.sent == [(None, None), ('"v1"', None)]          # asked about, answered 304
+    # Kept on disk, the size goes with it to the next run.
+    monkeypatch.setattr(_http, "CACHE_DIR", str(tmp_path))
+    _http.request_raw(URL, limit=5_000)
+    new_process(monkeypatch)
+    board.sent.clear()
+    assert _http.request_raw(URL, limit=5_000) == (first, None)
+    assert board.sent == [('"v1"', None)]
+    # Still never asked about under a limit it does not fit.
+    board.sent.clear()
+    assert len(_http.request_raw(URL, limit=1_000)[0]) == 1_000
+    assert board.sent == [(None, None)]
+
+
+def test_a_copy_kept_without_its_size_is_measured_by_its_text(monkeypatch, tmp_path):
+    # A file written before 0.3.1 has no size: its text decides, as before, and never
+    # says a page fits that does not.
+    monkeypatch.setattr(_http, "CACHE_DIR", str(tmp_path))
+    board = Board(monkeypatch, body=b"x" * 3_000)
+    _http.request_raw(URL, limit=5_000)
+    [path] = files(tmp_path)
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        entry = json.load(fh)
+    assert entry["bytes"] == 3_000
+    del entry["bytes"]
+    with gzip.open(path, "wt", encoding="utf-8") as fh:
+        json.dump(entry, fh)
+    new_process(monkeypatch)
+    board.sent.clear()
+    assert _http.request_raw(URL, limit=5_000)[1] is None
+    assert board.sent == [('"v1"', None)]

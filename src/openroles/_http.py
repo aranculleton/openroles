@@ -77,15 +77,16 @@ def _held() -> int:
 
 
 def _remember(key: Key, etag: str, body: str, modified: str = "",
-              fetched: Optional[float] = None) -> None:
+              fetched: Optional[float] = None, read_from: Optional[int] = None) -> None:
     """Keep an answer in memory. `fetched` is when it was last read in full: now, unless
-    a 304 is sending back one read earlier."""
+    a 304 is sending back one read earlier. `read_from` is how many bytes the body was
+    read from (`_fits`), when known."""
     with _ETAG_LOCK:
         size = _held()
         old = _ETAGS.pop(key, None)
         if old is not None:
             size -= len(old[2])
-        _ETAGS[key] = (etag, modified, body, _now() if fetched is None else fetched)
+        _ETAGS[key] = (etag, modified, body, _now() if fetched is None else fetched, read_from)
         size += len(body)
         while _ETAGS and size > ETAG_BYTES:
             _, gone = _ETAGS.popitem(last=False)
@@ -156,10 +157,11 @@ def _cache_file(key: Key) -> str:
     return os.path.join(CACHE_DIR, "http", name)
 
 
-def _disk_get(key: Key) -> Optional[Tuple[str, str, str, float]]:
-    """(etag, last modified, body, when it was last read in full) kept on disk for (url,
-    accept), or None. An unreadable or foreign file is a miss, never an error; one that
-    does not say when it was read reads as read long ago."""
+def _disk_get(key: Key) -> Optional[Tuple[str, str, str, float, Optional[int]]]:
+    """(etag, last modified, body, when it was last read in full, the bytes it was read
+    from or None) kept on disk for (url, accept), or None. An unreadable or foreign file
+    is a miss, never an error; one that does not say when it was read reads as read long
+    ago, and one that does not say its size (written before 0.3.1) is measured instead."""
     if not CACHE_DIR:
         return None
     _tidy(os.path.join(CACHE_DIR, "http"))
@@ -176,11 +178,13 @@ def _disk_get(key: Key) -> Optional[Tuple[str, str, str, float]]:
         return None
     fetched = entry.get("fetched")
     real = isinstance(fetched, (int, float)) and not isinstance(fetched, bool) and math.isfinite(fetched)
-    return etag, modified, body, float(fetched) if real else 0.0
+    size = entry.get("bytes")
+    size = size if isinstance(size, int) and not isinstance(size, bool) and size >= 0 else None
+    return etag, modified, body, float(fetched) if real else 0.0, size
 
 
 def _disk_put(key: Key, etag: str, modified: str, body: str,
-              fetched: Optional[float] = None) -> None:
+              fetched: Optional[float] = None, size: Optional[int] = None) -> None:
     if not CACHE_DIR:
         return
     fetched = _now() if fetched is None else fetched
@@ -191,10 +195,11 @@ def _disk_put(key: Key, etag: str, modified: str, body: str,
         os.makedirs(folder, mode=0o700, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=folder, suffix=".tmp")      # owner-only
         with os.fdopen(fd, "wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as fh:
-            fh.write(json.dumps({"v": CACHE_FORMAT, "url": key[0], "accept": key[1],
-                                 "etag": etag, "last_modified": modified, "body": body,
-                                 "fetched": fetched},
-                                ensure_ascii=False).encode("utf-8"))
+            entry = {"v": CACHE_FORMAT, "url": key[0], "accept": key[1], "etag": etag,
+                     "last_modified": modified, "body": body, "fetched": fetched}
+            if size is not None:
+                entry["bytes"] = size
+            fh.write(json.dumps(entry, ensure_ascii=False).encode("utf-8"))
         grown = os.path.getsize(tmp)
         try:
             grown -= os.path.getsize(path)          # the copy this one replaces
@@ -226,7 +231,8 @@ def _tidy(folder: str, grown: int = 0) -> None:
         _TIDY[folder] = [prune(folder), now]
 
 
-def _touch(key: Key, etag: str, modified: str, body: str, fetched: float) -> None:
+def _touch(key: Key, etag: str, modified: str, body: str, fetched: float,
+           size: Optional[int] = None) -> None:
     """An answer asked for again counts as recent, so pruning keeps what is in use; one
     known only in memory (the folder was named after it was read) is written down."""
     if not CACHE_DIR:
@@ -235,7 +241,7 @@ def _touch(key: Key, etag: str, modified: str, body: str, fetched: float) -> Non
     try:
         os.utime(_cache_file(key))
     except OSError:
-        _disk_put(key, etag, modified, body, fetched)
+        _disk_put(key, etag, modified, body, fetched, size)
 
 
 def prune(folder: str, now: Optional[float] = None) -> int:
@@ -309,9 +315,9 @@ def _all_arrived(fh, got: int) -> Optional[bool]:
     return None
 
 
-def _read(fh, limit: int) -> Tuple[str, bool]:
+def _read(fh, limit: int) -> Tuple[str, bool, int]:
     """(the response body as text, unzipped when it came gzipped, at most `limit` bytes;
-    whether that is provably all of it). Only a body shown to be whole is ever kept for
+    whether that is provably all of it; how many bytes the text was decoded from). Only a body shown to be whole is ever kept for
     next time: not one cut at the limit, not one short of its Content-Length, not a gzip
     stream that stops before its end, and not a plain body that gives no length and is
     not chunked, since nothing shows whether all of it came."""
@@ -331,7 +337,7 @@ def _read(fh, limit: int) -> Tuple[str, bool]:
         raw = raw[:limit]
     else:
         whole = whole and arrived is True
-    return raw.decode("utf-8", "replace"), whole
+    return raw.decode("utf-8", "replace"), whole, len(raw)
 
 
 def _body(fh, limit: int) -> str:
@@ -405,15 +411,15 @@ def request_raw(url: str, payload: Optional[dict] = None,
 def _kept_again(key: Key, cached: tuple) -> None:
     """A kept answer a 304 sent back and that was read: recent again, in memory and on disk,
     and still dated from when it was last read in full."""
-    _remember(key, cached[0], cached[2], cached[1], cached[3])
-    _touch(key, *cached)
+    _remember(key, cached[0], cached[2], cached[1], cached[3], _size(cached))
+    _touch(key, *cached[:4], _size(cached))
 
 
-def _keep(key: Key, etag: str, modified: str, body: str) -> None:
+def _keep(key: Key, etag: str, modified: str, body: str, size: Optional[int] = None) -> None:
     """A new answer, kept to be asked about next time, in memory and on disk."""
     fetched = _now()
-    _remember(key, etag, body, modified, fetched)
-    _disk_put(key, etag, modified, body, fetched)
+    _remember(key, etag, body, modified, fetched, size)
+    _disk_put(key, etag, modified, body, fetched, size)
 
 
 def _get(url: str, payload: Optional[dict] = None, accept: str = "*/*",
@@ -447,8 +453,23 @@ def _get(url: str, payload: Optional[dict] = None, accept: str = "*/*",
     return "", f"more than {MAX_REDIRECTS} redirects", None, None
 
 
-def _fits(body: str, limit: int) -> bool:
-    """Whether `body` is within `limit` bytes, as a fresh read would count it."""
+def _size(cached) -> Optional[int]:
+    """The bytes a kept answer was read from, or None when it was kept without them."""
+    return cached[4] if len(cached) > 4 else None
+
+
+def _fits(cached, limit: int) -> bool:
+    """Whether a kept answer is within `limit` bytes, as a fresh read would count it.
+
+    By the bytes it was read from. Its text alone overcounted a page with bytes that are
+    not UTF-8: each was read as one three-byte replacement character, so a 2,000-byte page
+    measured up to 6,000 and, under a 5,000-byte limit, was never asked about again. A
+    copy kept without its size (before 0.3.1) is measured by its text, which never says a
+    page fits that does not."""
+    size = _size(cached)
+    if size is not None:
+        return size <= limit
+    body = cached[2]
     return len(body) * 4 <= limit or len(body.encode("utf-8")) <= limit
 
 
@@ -471,7 +492,7 @@ def _one(url: str, data, headers: dict, limit: int):
         # read afresh, the body is cut at the limit. So it is not asked about, and the copy
         # stays for the caller that can take it. (The limit is not part of the key: the
         # same page under two limits is one answer whenever it fits both.)
-        if cached and not _fits(cached[2], limit):
+        if cached and not _fits(cached, limit):
             cached = None
         elif cached and not cached[0] and not 0 <= _now() - cached[3] < MODIFIED_MAX_AGE:
             cached, expired = None, True     # read in full; see MODIFIED_MAX_AGE
@@ -492,10 +513,10 @@ def _one(url: str, data, headers: dict, limit: int):
             with _slot(host):
                 _wait_turn(host)
                 with _urlopen(req, timeout=TIMEOUT) as fh:
-                    body, whole = _read(fh, limit)
+                    body, whole, size = _read(fh, limit)
                     keep = _validators(fh.headers) if data is None and whole else None
             if keep:
-                return body, None, None, None, (key, keep[0], keep[1], body)
+                return body, None, None, None, (key, keep[0], keep[1], body, size)
             if cached or expired:
                 _forget(key)         # what was kept no longer describes this answer
             return body, None, None, None, None

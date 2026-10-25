@@ -15,7 +15,7 @@ from ..models import (
     amount,
     as_str,
     clean,
-    html_to_text,
+    html_or_plain,
     ident,
     iso_day,
     pay,
@@ -151,15 +151,12 @@ def rows(token: str, data: object) -> List[Job]:
             employment_type=clean(j.get("employmentType")),
             compensation=_pay(j),
             **_salary(j),
-            description=(clean_block(j.get("descriptionPlain"))
-                         or html_to_text(j.get("descriptionHtml")) or None),
+            # From the HTML, so that what no reader sees is left out; the plain text only
+            # where there is no HTML.
+            description=html_or_plain(j.get("descriptionHtml"), j.get("descriptionPlain")) or None,
             workplace=workplace_of(workplace) or ("remote" if remote else ""),
         ))
     return out
-
-
-def clean_block(text) -> str:
-    return as_str(text).strip()
 
 
 def fetch(token: str) -> List[Job]:

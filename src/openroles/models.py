@@ -124,6 +124,17 @@ def html_to_text(content: str) -> str:
     return "\n".join(line.strip() for line in s.splitlines()).strip()[:BODY_CAP]
 
 
+def html_or_plain(markup, plain) -> str:
+    """A posting's text from a board's HTML field, and from its plain-text field only where the
+    board sent no HTML. A board's plain-text field is its HTML with the tags taken off and
+    nothing else, so a comment or a hidden element's text is in it: `html_to_text` leaves it
+    out of the HTML's. An HTML field that is there but shows no text gives "", and is not a
+    reason to read the plain one."""
+    if isinstance(markup, str) and markup.strip():
+        return html_to_text(markup)
+    return plain.strip() if isinstance(plain, str) else ""
+
+
 def failed(err: str, what: str) -> str:
     """Why a board did not come back, said honestly: a wrong name only on a 404 or an answer
     that is not a board, slowing down on a 429 or 503, and anything else as it was."""

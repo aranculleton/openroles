@@ -19,14 +19,14 @@
   open again. The text is read again after each round of decoding, so what a board encodes
   twice is dropped too, and a text with no sign of any of it reads exactly as before. Text
   hidden by a style sheet, a class, a colour, a size or a position is still there.
-- **Lever and Ashby descriptions are built from the boards' HTML, so the same applies to them.**
-  They read the board's plain-text field first (Lever's `descriptionPlain` and
-  `additionalPlain`, Ashby's `descriptionPlain`), which is the HTML with its tags taken off
-  and nothing else: a comment or a hidden element's text was in it. They now read the HTML
-  (Lever's `description` and `additional`, Ashby's `descriptionHtml`), and the plain-text field
-  only for a part the board sent no HTML for; an HTML field that shows no text gives no
-  description. The text comes out as it does for the other systems, so an inline tag leaves a
-  space (`<b>warehouse</b>, and` reads "warehouse , and").
+- **Lever, Ashby and Gem descriptions are built from the boards' HTML, so the same applies to
+  them.** They read the board's plain-text field first (Lever's `descriptionPlain` and
+  `additionalPlain`, Ashby's `descriptionPlain`, Gem's `content_plain`), which is the HTML
+  with its tags taken off and nothing else: a comment or a hidden element's text was in it.
+  They now read the HTML (Lever's `description` and `additional`, Ashby's `descriptionHtml`,
+  Gem's `content`), and the plain-text field only for a part the board sent no HTML for; an
+  HTML field that shows no text gives no description. The text comes out as it does for the
+  other systems, so an inline tag leaves a space (`<b>warehouse</b>, and` reads "warehouse , and").
 
 ### Fixed
 

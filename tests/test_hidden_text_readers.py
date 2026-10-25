@@ -2,7 +2,7 @@
 
 A board's plain-text field is its HTML with the tags taken off, so a comment or a hidden
 element's text is in it. Every posting here is invented; `test_hidden_text.py` has the rest."""
-from openroles.providers import ashby, lever
+from openroles.providers import ashby, gem, lever
 
 from .conftest import fixture
 
@@ -79,3 +79,12 @@ def test_ashby_does_not_fall_back_to_the_plain_text_when_the_html_shows_nothing(
            "descriptionHtml": "<!-- SECRET-COMMENT -->"}
     web.routes["api.ashbyhq.com/posting-api/job-board/acme"] = {"jobs": [job]}
     assert ashby.fetch("acme")[0].description is None
+
+
+def test_gem_reads_the_html_so_that_what_no_reader_sees_is_left_out(web):
+    post = {"id": 7, "title": "Analyst", "absolute_url": "https://jobs.gem.com/acme/7",
+            "content": _with(SECRETS), "content_plain": _plain(SECRETS)}
+    web.routes["api.gem.com/job_board/v0/acme/job_posts/"] = [post]
+    assert gem.fetch("acme")[0].description == "Intro text.\nThen this.\nLast point."
+    del post["content"]
+    assert gem.fetch("acme")[0].description == _plain(SECRETS)

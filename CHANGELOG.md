@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-10-26)
+
+What no reader sees no longer reaches a description, inline tags join the words around
+them, and a robots.txt with many wildcards is matched at once.
 
 ### Changed
 

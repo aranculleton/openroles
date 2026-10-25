@@ -91,12 +91,17 @@ class Job:
         return asdict(self)
 
 
-_TAG = re.compile(r"<[^>]+>")
+# A tag is anything between "<" and ">". The tag of an inline element (group 1) leaves nothing
+# in its place, as it leaves nothing between the words on either side of it on a page; any other
+# tag leaves a space. (Block elements and <br> end a line: _BREAK, which is read first.)
+_INLINE = ("a abbr b bdi bdo cite code data dfn em font i kbd mark q s samp small span strong sub sup "
+           "time u var wbr").split()
+_TAG = re.compile(r"<(?:(/?(?:" + "|".join(_INLINE) + r")(?=[\s/>])[^>]*)|[^>]+)>", re.I | re.A)
 # The tags that end a line: <br>, and the end of a paragraph, list item, block or heading.
 _BREAK = re.compile(r"<(br|/p|/li|/div|/h\d)[^>]*>", re.I)
 
 
-def _swap_tags(pattern, repl: str, s: str) -> str:
+def _swap_tags(pattern, repl, s: str) -> str:
     """pattern.sub(repl, s) for a tag pattern, which ends at a ">": run only up to the last
     ">" in `s`, since no tag can start after it. Before it, every "<" has a ">" to stop at,
     so the pattern never looks far ahead; over the whole text, it looked to the end of the
@@ -119,7 +124,7 @@ def html_to_text(content: str) -> str:
             break
         s = drop_hidden(un)
     s = _swap_tags(_BREAK, "\n", s)
-    s = _swap_tags(_TAG, " ", s)
+    s = _swap_tags(_TAG, lambda m: " " if m.group(1) is None else "", s)
     s = re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", s))
     return "\n".join(line.strip() for line in s.splitlines()).strip()[:BODY_CAP]
 

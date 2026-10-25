@@ -25,8 +25,16 @@
   with its tags taken off and nothing else: a comment or a hidden element's text was in it.
   They now read the HTML (Lever's `description` and `additional`, Ashby's `descriptionHtml`,
   Gem's `content`), and the plain-text field only for a part the board sent no HTML for; an
-  HTML field that shows no text gives no description. The text comes out as it does for the
-  other systems, so an inline tag leaves a space (`<b>warehouse</b>, and` reads "warehouse , and").
+  HTML field that shows no text gives no description.
+- **Inline tags join the words around them, as a page shows them.** `<b>warehouse</b>, and`
+  read "warehouse , and", because every tag left a space in its place, and now reads
+  "warehouse, and". The tag of an inline element (`a`, `abbr`, `b`, `bdi`, `bdo`, `cite`,
+  `code`, `data`, `dfn`, `em`, `font`, `i`, `kbd`, `mark`, `q`, `s`, `samp`, `small`, `span`,
+  `strong`, `sub`, `sup`, `time`, `u`, `var`, `wbr`) leaves nothing, so `Hel<span>lo</span>`
+  reads "Hello". The end of a block and `<br>` still end the line, and any other tag, a
+  comment, and a hidden element that is dropped still leave a space. This changes the
+  description of every system's postings wherever an inline tag touches a word or a mark of
+  punctuation, and a description with a space beside each such tag reads as before.
 
 ### Fixed
 

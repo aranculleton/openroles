@@ -138,14 +138,22 @@ def test_a_description_s_markup_is_dropped_in_linear_time():
     assert html_to_text("<p>Plan</p><br><<a href=x>the week</a> <> 2 < 3") == "Plan\n\nthe week <> 2 < 3"
 
 
-def test_a_description_reads_as_the_two_tag_patterns_read_it():
-    """The two tag patterns now run only up to the last ">"; on text built from the pieces
-    that decide them, that gives the same text as running them over all of it."""
+def test_a_description_reads_as_the_tag_patterns_read_it():
+    """The tag patterns now run only up to the last ">"; on text built from the pieces that
+    decide them, that gives the same text as running them over all of it. A tag of an inline
+    element leaves nothing in its place, a block's or <br>'s ends a line, any other leaves a space."""
     import html
     import random
     import re
 
     from openroles.models import BODY_CAP, html_to_text
+
+    inline = ("a abbr b bdi bdo cite code data dfn em font i kbd mark q s samp small span strong sub sup "
+              "time u var wbr").split()
+
+    def tag(m):
+        name = re.match(r"/?([A-Za-z0-9]+)(?:[\s/]|$)", m.group(0)[1:-1])
+        return "" if name and name.group(1).lower() in inline else " "
 
     def by_patterns(s):
         for _ in range(3):
@@ -154,12 +162,14 @@ def test_a_description_reads_as_the_two_tag_patterns_read_it():
                 break
             s = un
         s = re.sub(r"<(br|/p|/li|/div|/h\d)[^>]*>", "\n", s, flags=re.I)
-        s = re.sub(r"<[^>]+>", " ", s)
+        s = re.sub(r"<[^>]+>", tag, s)
         s = re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", s))
         return "\n".join(line.strip() for line in s.splitlines()).strip()[:BODY_CAP]
     pieces = ["<", ">", "<>", "br", "BR", "/p", "/P", "/li", "/div", "/h1", "/h", "/H9", "a", " ",
-              "\n", "\t", "&lt;", "&gt;", "&amp;lt;", "<br>", "<br/>", "</p>", "<p>", "x", "İ", "/"]
+              "\n", "\t", "&lt;", "&gt;", "&amp;lt;", "<br>", "<br/>", "</p>", "<p>", "x", "\u0130", "/",
+              "<b>", "</b>", "<A>", "<span class=x>", "</span>", "<em", "<abbr>", "<ab>", "<span2>", "<bold>",
+              "<small/>", "<S>", "<font color=red>", "<wbr>", "<div>", "<td>", "<i\n>"]
     rnd = random.Random(3)
-    for _ in range(5_000):
+    for _ in range(8_000):
         text = "".join(rnd.choice(pieces) for _ in range(rnd.randint(0, 16)))
         assert html_to_text(text) == by_patterns(text), text

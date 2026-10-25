@@ -105,7 +105,7 @@ BROWSER = [
     ("<p hidden>secret<p>visible<p>too", ["visible", "too"]),
     ("<p hidden>a<ul><li>b</li></ul>c", ["b", "c"]),
     ("<h2 hidden>a<h2>b", ["b"]),
-    ("<a hidden>x<a>y</a>z", ["y", "z"]),
+    ("<a hidden>x<a>y</a> z", ["y", "z"]),
     # An end tag does not reach across what a browser does not let it reach across.
     ("<span><div hidden></span>PROMPT</div>after", ["after"]),
     ("<span hidden><div>a</span>PROMPT</div>after", []),
@@ -121,7 +121,7 @@ BROWSER = [
     ("<tr hidden><td>kept</td></tr>after", ["kept", "after"]),
     # Formatting elements, which can end with a hidden one inside.
     ("<b hidden><i hidden>x</i>y</b>after", ["after"]),
-    ("<b hidden><i>x</b>y</i>after", ["y", "after"]),            # the <i> is opened again, and is not hidden
+    ("<b hidden><i>x</b>y</i> after", ["y", "after"]),           # the <i> is opened again, and is not hidden
     ("<p>one<b hidden>two<i>three</i></b>four</p>five", ["one", "four", "five"]),
     ("<select><option hidden>a</option><option>b</option></select>after", ["b", "after"]),
     ("<p>x<br hidden>y</p>", ["x", "y"]),
@@ -271,23 +271,32 @@ def test_what_is_dropped_is_found_in_linear_time(what):
 # ----------------------------------------------------------------- what else stays the same
 
 
+INLINE = ("a abbr b bdi bdo cite code data dfn em font i kbd mark q s samp small span strong sub sup "
+          "time u var wbr").split()
+
+
+def _tag(m):
+    name = re.match(r"/?([A-Za-z0-9]+)(?:[\s/]|$)", m.group(0)[1:-1])
+    return "" if name and name.group(1).lower() in INLINE else " "
+
+
 def _before(s):
     """html_to_text as it was before it dropped what no reader sees: the entities decoded
-    (up to three times), then the two tag patterns."""
+    (up to three times), then the tag patterns."""
     for _ in range(3):
         un = html.unescape(s)
         if un == s:
             break
         s = un
     s = re.sub(r"<(br|/p|/li|/div|/h\d)[^>]*>", "\n", s, flags=re.I)
-    s = re.sub(r"<[^>]+>", " ", s)
+    s = re.sub(r"<[^>]+>", _tag, s)
     s = re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", s))
     return "\n".join(line.strip() for line in s.splitlines()).strip()[:BODY_CAP]
 
 
 def test_text_that_only_looks_like_it_hides_reads_as_it_did():
     """The words and the markup that are near what hides, shuffled: none of it hides, so each
-    reads as the two tag patterns read it."""
+    reads as the tag patterns read it."""
     pieces = [
         "<p>", "</p>", "<br>", "<br/>", "<li>", "</li>", "<ul>", "</ul>", "<div>", "</div>", "<b>", "</b>",
         '<a href="x">', "</a>", '<p style="color:red">', '<span class="hidden">', "</span>",

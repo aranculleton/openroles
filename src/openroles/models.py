@@ -8,6 +8,8 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional, Tuple
 
+from ._hidden import drop_hidden
+
 ATS = ("greenhouse", "lever", "ashby", "workday", "workable", "teamtailor", "personio",
        "recruitee", "rippling", "jazzhr", "gem", "polymer", "manatal", "homerun", "clearcompany",
        "careersite")
@@ -89,12 +91,17 @@ class Job:
         return asdict(self)
 
 
-_TAG = re.compile(r"<[^>]+>")
+# A tag is anything between "<" and ">". The tag of an inline element (group 1) leaves nothing
+# in its place, as it leaves nothing between the words on either side of it on a page; any other
+# tag leaves a space. (Block elements and <br> end a line: _BREAK, which is read first.)
+_INLINE = ("a abbr b bdi bdo cite code data dfn em font i kbd mark q s samp small span strong sub sup "
+           "time u var wbr").split()
+_TAG = re.compile(r"<(?:(/?(?:" + "|".join(_INLINE) + r")(?=[\s/>])[^>]*)|[^>]+)>", re.I | re.A)
 # The tags that end a line: <br>, and the end of a paragraph, list item, block or heading.
 _BREAK = re.compile(r"<(br|/p|/li|/div|/h\d)[^>]*>", re.I)
 
 
-def _swap_tags(pattern, repl: str, s: str) -> str:
+def _swap_tags(pattern, repl, s: str) -> str:
     """pattern.sub(repl, s) for a tag pattern, which ends at a ">": run only up to the last
     ">" in `s`, since no tag can start after it. Before it, every "<" has a ">" to stop at,
     so the pattern never looks far ahead; over the whole text, it looked to the end of the
@@ -105,19 +112,32 @@ def _swap_tags(pattern, repl: str, s: str) -> str:
 
 
 def html_to_text(content: str) -> str:
-    """Plain text from an ATS's HTML, which some boards entity-encode twice. Anything a
+    """Plain text from an ATS's HTML, which some boards entity-encode twice. What no reader
+    sees (comments, scripts, styles, hidden elements) is dropped first, and again after each
+    round of decoding, so what a board encoded twice is dropped too: see `_hidden`. Anything a
     board sends there that is not text (a number, an object, a list) gives "", never an
     exception."""
-    s = content if isinstance(content, str) else ""
+    s = drop_hidden(content if isinstance(content, str) else "")
     for _ in range(3):
         un = html.unescape(s)
         if un == s:
             break
-        s = un
+        s = drop_hidden(un)
     s = _swap_tags(_BREAK, "\n", s)
-    s = _swap_tags(_TAG, " ", s)
+    s = _swap_tags(_TAG, lambda m: " " if m.group(1) is None else "", s)
     s = re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", s))
     return "\n".join(line.strip() for line in s.splitlines()).strip()[:BODY_CAP]
+
+
+def html_or_plain(markup, plain) -> str:
+    """A posting's text from a board's HTML field, and from its plain-text field only where the
+    board sent no HTML. A board's plain-text field is its HTML with the tags taken off and
+    nothing else, so a comment or a hidden element's text is in it: `html_to_text` leaves it
+    out of the HTML's. An HTML field that is there but shows no text gives "", and is not a
+    reason to read the plain one."""
+    if isinstance(markup, str) and markup.strip():
+        return html_to_text(markup)
+    return plain.strip() if isinstance(plain, str) else ""
 
 
 def failed(err: str, what: str) -> str:

@@ -172,7 +172,7 @@ Every role, from every system, has the same fields:
 | `compensation` | the posted pay band, where the employer publishes one, as the board words it |
 | `salary_min`, `salary_max`, `salary_currency`, `salary_period` | the same band as numbers, its ISO currency code and `hour`, `day`, `week`, `month`, `year` or `""` (a period such as every two weeks), only where the board publishes them as numbers (Lever, Ashby, Recruitee, Rippling, ClearCompany, careers sites); never read out of a description |
 | `deadline` | where the board provides one |
-| `description` | plain text, HTML removed |
+| `description` | plain text: HTML removed, and with it what no page shows (comments, scripts, hidden elements) |
 
 ## Supported systems
 

@@ -1,9 +1,53 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-10-26)
+
+What no reader sees no longer reaches a description, inline tags join the words around
+them, and a robots.txt with many wildcards is matched at once.
+
+### Changed
+
+- **A description leaves out what no reader sees.** A comment, a `<script>` or `<style>`
+  block, what a `<noscript>` or `<template>` holds, and an element that is hidden, with
+  everything in it, are dropped before the HTML is flattened to text, so an instruction
+  planted where a page does not show it no longer reaches `Job.description`. An element is
+  hidden by the `hidden` attribute, `aria-hidden="true"`, or an inline `display:none` or
+  `visibility:hidden`, in any case and spacing, with `!important`, or with a comment or an
+  escape in the style. A word in another attribute (`class="hidden"`) hides nothing, a `>` in
+  a quoted value does not end a tag, and the text after a hidden element stays. A hidden
+  element ends where a browser ends it, with the end tags a page leaves out (`</p>`, `</li>`)
+  and without the ones a browser ignores (`</span>` across an open `<div>`). Whatever a
+  browser leaves open to the end of the text hides the rest of it: a comment, a script, a
+  hidden element, a tag whose quote never closes, and a hidden `<b>` or `<a>` that it would
+  open again. The text is read again after each round of decoding, so what a board encodes
+  twice is dropped too, and a text with no sign of any of it reads exactly as before. Text
+  hidden by a style sheet, a class, a colour, a size or a position is still there.
+- **Lever, Ashby and Gem descriptions are built from the boards' HTML, so the same applies to
+  them.** They read the board's plain-text field first (Lever's `descriptionPlain` and
+  `additionalPlain`, Ashby's `descriptionPlain`, Gem's `content_plain`), which is the HTML
+  with its tags taken off and nothing else: a comment or a hidden element's text was in it.
+  They now read the HTML (Lever's `description` and `additional`, Ashby's `descriptionHtml`,
+  Gem's `content`), and the plain-text field only for a part the board sent no HTML for; an
+  HTML field that shows no text gives no description.
+- **Inline tags join the words around them, as a page shows them.** `<b>warehouse</b>, and`
+  read "warehouse , and", because every tag left a space in its place, and now reads
+  "warehouse, and". The tag of an inline element (`a`, `abbr`, `b`, `bdi`, `bdo`, `cite`,
+  `code`, `data`, `dfn`, `em`, `font`, `i`, `kbd`, `mark`, `q`, `s`, `samp`, `small`, `span`,
+  `strong`, `sub`, `sup`, `time`, `u`, `var`, `wbr`) leaves nothing, so `Hel<span>lo</span>`
+  reads "Hello". The end of a block and `<br>` still end the line, and any other tag, a
+  comment, and a hidden element that is dropped still leave a space. This changes the
+  description of every system's postings wherever an inline tag touches a word or a mark of
+  punctuation, and a description with a space beside each such tag reads as before.
 
 ### Fixed
 
+- **A robots.txt with many wildcards is matched at once.** A rule's pattern was one regular
+  expression with a `.*` for each `*`, and a pattern with a hundred of them took minutes on a
+  path that did not match it: a 345 kB robots.txt of that kind hung `robots_allows` and the
+  checks built on it for any path longer than a few characters. A pattern is now read left to
+  right against the path, going back only to its last `*`, so the work is at most the length
+  of the pattern times the length of the path (10 to 40 ms for that file). Every verdict is
+  the same, except for a path with a raw line feed in it, which a request line cannot carry.
 - **A kept page that is not all UTF-8 is asked about again under a limit it fits.** Each
   byte that is not UTF-8 is read as one three-byte replacement character, so a page was
   measured by its text at up to three times the bytes it came in, and one near a caller's

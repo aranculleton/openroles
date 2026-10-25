@@ -12,7 +12,21 @@ from typing import List, Optional, Tuple
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, as_dict, as_list, as_str, clean, ident, iso_day, pay, workplace_of
+from ..models import (
+    BoardError,
+    Job,
+    RobotsDisallowed,
+    as_dict,
+    as_list,
+    as_str,
+    clean,
+    html_or_plain,
+    html_to_text,
+    ident,
+    iso_day,
+    pay,
+    workplace_of,
+)
 
 HOSTS = ("https://api.lever.co", "https://api.eu.lever.co")
 PATH = "/v0/postings/{token}?mode=json"
@@ -52,20 +66,24 @@ def exists(token: str) -> bool:
 
 
 def _description(j: dict) -> Optional[str]:
-    """The intro, then every list (requirements, responsibilities), then the closing text.
+    """The intro and body, then every list (requirements, responsibilities), then the closing
+    text.
 
-    `descriptionPlain` alone is only the intro: the requirements live in `lists`.
+    Each part is read from its HTML field (`description`, `lists`, `additional`), so that
+    what no reader sees is left out as it is for every other system, and from its plain-text
+    field (`descriptionPlain`, `additionalPlain`) only where Lever sent no HTML: the plain
+    fields keep a comment or a hidden element's text. `description` holds the intro and the
+    body together, and the requirements live in `lists`.
     """
-    parts = [as_str(j.get("descriptionPlain")).strip()]
+    parts = [html_or_plain(j.get("description"), j.get("descriptionPlain"))]
     for block in as_list(j.get("lists")):
         if not isinstance(block, dict):
             continue
-        from ..models import html_to_text
         body = html_to_text(block.get("content"))
         head = clean(block.get("text"))
         if head or body:
             parts.append(f"{head}\n{body}".strip())
-    parts.append(as_str(j.get("additionalPlain")).strip())
+    parts.append(html_or_plain(j.get("additional"), j.get("additionalPlain")))
     text = "\n\n".join(p for p in parts if p)
     return text or None
 

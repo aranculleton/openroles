@@ -1,7 +1,6 @@
 """A small RFC 9309 robots.txt reader: longest match wins, and a tie goes to Disallow."""
 from __future__ import annotations
 
-import re
 from urllib.parse import unquote
 
 _DIRECTIVES = ("user-agent", "allow", "disallow", "sitemap", "crawl-delay", "host",
@@ -118,13 +117,37 @@ def crawl_delay(text: str, agent: str) -> float:
 
 
 def _match(pattern: str, path: str) -> int:
-    """Length of the match under RFC 9309 wildcards, or -1. Patterns are percent-decoded."""
+    """Length of the match under RFC 9309 wildcards, or -1. Patterns are percent-decoded.
+
+    A pattern matches the paths it begins: "*" stands for any run of characters (none too),
+    "$" for the end of the path, and every other character for itself. The pattern is read
+    from left to right against the path, going back only to the last "*", to let it take one
+    more character. That is enough, since an earlier "*" can only do worse than the last one
+    when the rest has to be found further on, and it keeps the work to the product of the two
+    lengths, however many wildcards there are: as one regular expression, a pattern of a
+    hundred "*" took minutes on a path that did not match it."""
     if pattern == "":
         return -1
     pattern = unquote(pattern)
-    rx = "^" + "".join(".*" if c == "*" else ("$" if c == "$" else re.escape(c))
-                       for c in pattern)
-    return len(pattern) if re.match(rx, path) else -1
+    n, m = len(path), len(pattern)
+    i = j = 0                           # how far the path and the pattern are read
+    star, taken = -1, 0                 # the last "*", and how far the path was when it began
+    while j < m:
+        c = pattern[j]
+        if c == "*":
+            star, taken = j, i
+            j += 1
+        elif c == "$" and i == n:
+            j += 1
+        elif c != "$" and i < n and path[i] == c:
+            i += 1
+            j += 1
+        elif star >= 0 and taken < n:   # let the "*" take one more character, and go on after it
+            taken += 1
+            i, j = taken, star + 1
+        else:
+            return -1
+    return m
 
 
 def allowed(text: str, agent: str, path: str) -> bool:

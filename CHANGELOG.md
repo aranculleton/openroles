@@ -30,6 +30,13 @@
 
 ### Fixed
 
+- **A robots.txt with many wildcards is matched at once.** A rule's pattern was one regular
+  expression with a `.*` for each `*`, and a pattern with a hundred of them took minutes on a
+  path that did not match it: a 345 kB robots.txt of that kind hung `robots_allows` and the
+  checks built on it for any path longer than a few characters. A pattern is now read left to
+  right against the path, going back only to its last `*`, so the work is at most the length
+  of the pattern times the length of the path (10 to 40 ms for that file). Every verdict is
+  the same, except for a path with a raw line feed in it, which a request line cannot carry.
 - **A kept page that is not all UTF-8 is asked about again under a limit it fits.** Each
   byte that is not UTF-8 is read as one three-byte replacement character, so a page was
   measured by its text at up to three times the bytes it came in, and one near a caller's

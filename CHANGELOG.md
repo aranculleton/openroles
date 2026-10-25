@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Changed
+
+- **A description leaves out what no reader sees.** A comment, a `<script>` or `<style>`
+  block, what a `<noscript>` or `<template>` holds, and an element that is hidden, with
+  everything in it, are dropped before the HTML is flattened to text, so an instruction
+  planted where a page does not show it no longer reaches `Job.description`. An element is
+  hidden by the `hidden` attribute, `aria-hidden="true"`, or an inline `display:none` or
+  `visibility:hidden`, in any case and spacing, with `!important`, or with a comment or an
+  escape in the style. A word in another attribute (`class="hidden"`) hides nothing, a `>` in
+  a quoted value does not end a tag, and the text after a hidden element stays. A hidden
+  element ends where a browser ends it, with the end tags a page leaves out (`</p>`, `</li>`)
+  and without the ones a browser ignores (`</span>` across an open `<div>`). Whatever a
+  browser leaves open to the end of the text hides the rest of it: a comment, a script, a
+  hidden element, a tag whose quote never closes, and a hidden `<b>` or `<a>` that it would
+  open again. The text is read again after each round of decoding, so what a board encodes
+  twice is dropped too, and a text with no sign of any of it reads exactly as before. Text
+  hidden by a style sheet, a class, a colour, a size or a position is still there.
+
 ### Fixed
 
 - **A kept page that is not all UTF-8 is asked about again under a limit it fits.** Each

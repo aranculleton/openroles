@@ -8,6 +8,8 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional, Tuple
 
+from ._hidden import drop_hidden
+
 ATS = ("greenhouse", "lever", "ashby", "workday", "workable", "teamtailor", "personio",
        "recruitee", "rippling", "jazzhr", "gem", "polymer", "manatal", "homerun", "clearcompany",
        "careersite")
@@ -105,15 +107,17 @@ def _swap_tags(pattern, repl: str, s: str) -> str:
 
 
 def html_to_text(content: str) -> str:
-    """Plain text from an ATS's HTML, which some boards entity-encode twice. Anything a
+    """Plain text from an ATS's HTML, which some boards entity-encode twice. What no reader
+    sees (comments, scripts, styles, hidden elements) is dropped first, and again after each
+    round of decoding, so what a board encoded twice is dropped too: see `_hidden`. Anything a
     board sends there that is not text (a number, an object, a list) gives "", never an
     exception."""
-    s = content if isinstance(content, str) else ""
+    s = drop_hidden(content if isinstance(content, str) else "")
     for _ in range(3):
         un = html.unescape(s)
         if un == s:
             break
-        s = un
+        s = drop_hidden(un)
     s = _swap_tags(_BREAK, "\n", s)
     s = _swap_tags(_TAG, " ", s)
     s = re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", s))

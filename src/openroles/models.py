@@ -142,9 +142,12 @@ def html_or_plain(markup, plain) -> str:
 
 def failed(err: str, what: str) -> str:
     """Why a board did not come back, said honestly: a wrong name only on a 404 or an answer
-    that is not a board, slowing down on a 429 or 503, and anything else as it was."""
+    that is not a board, slowing down on a 429 or 503, a request not sent because its host
+    asked for a pause or its rate limit is spent, and anything else as it was."""
     if err in ("HTTP 429", "HTTP 503"):
         return f"the board asked to slow down ({err}); try again later"
+    if err and err.startswith("not sent: "):
+        return f"{err}; try again later"
     if not err or err == "HTTP 404" or not err.startswith(("HTTP", "URLError", "Timeout", "OSError")):
         return f"{err or 'not a board'}; probably a wrong {what}"
     return f"the board did not answer ({err})"

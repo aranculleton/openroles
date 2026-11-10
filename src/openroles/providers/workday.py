@@ -206,7 +206,7 @@ class WorkdayBoard:
         if self.halt.is_set():
             return None, "not sent: the board asked to slow down"
         data, err = _http.request(url, payload)
-        if err in ("HTTP 429", "HTTP 503"):
+        if err in ("HTTP 429", "HTTP 503") or (err or "").startswith("not sent: "):
             self.halt.set()
         return data, err
 

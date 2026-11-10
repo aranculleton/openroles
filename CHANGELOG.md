@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **A host that answers 429 or 503 is sent nothing more until its pause has passed.** Only
+  Workday stopped when told to slow down, and only for the board it was reading: Rippling
+  and Polymer went on asking for every posting's record, a careers site for every job
+  page, and every other board on the same host was read as if nothing had been said. Now
+  the host itself is held: nothing is sent to it, from any board or thread, until the pause
+  its `Retry-After` names has passed (seconds or a date), or for ten minutes
+  (`_http.BACKOFF`) when it names none, and never for more than an hour, so a long-running
+  MCP server comes back to it. A request in that time fails at once with "not sent: <host>
+  answered HTTP 429 and asked to slow down", and a board that fails that way says to try
+  again later rather than that its name is probably wrong. A robots.txt that answers 429 or
+  503 holds its host the same way, and is asked again after the pause instead of being
+  read as unreachable for a day.
+- **Rippling's documented rate limit holds across boards.** "100 requests every 10
+  minutes" was kept per board (80 postings' records at most), so a run that read two
+  Rippling boards could send 160. Every request to `api.rippling.com` now counts against
+  one budget for the process, 90 in any ten minutes, and one past it is not sent ("not
+  sent: api.rippling.com takes 100 requests in 10 minutes, and that many were sent"). A
+  reader for another host with a documented limit adds it to `_http.LIMITS`.
+
 ## 0.4.0 (2026-10-26)
 
 What no reader sees no longer reaches a description, inline tags join the words around

@@ -5,8 +5,9 @@ Rippling publishes the API for rendering a board on a company's own careers site
 https://api.rippling.com/platform/api/ats/v2/board/<slug>/jobs, with no authentication
 and "Rate Limit: 100 requests every 10 minutes". The listing carries no description or
 date; each posting's own record (the same host, /<slug>/jobs/<id>) does, so it is
-fetched only when asked for, and never more than DETAIL_CAP a board, which keeps a read
-inside that limit. Only an explicit Disallow in the host's robots.txt stops a read.
+fetched only when asked for, and never more than DETAIL_CAP a board. The limit is kept
+across boards too: every request to the host counts against it (`_http.LIMITS`), and one
+past it is not sent. Only an explicit Disallow in the host's robots.txt stops a read.
 """
 from __future__ import annotations
 
@@ -35,6 +36,7 @@ BASE = "https://api.rippling.com/platform/api/ats/v2/board/{slug}"
 PAGE_SIZE = 1000            # the documented maximum
 MAX_PAGES = 5
 DETAIL_CAP = 80             # under the documented 100 requests every 10 minutes
+_http.LIMITS.setdefault(HOST, (100, 600))
 
 Details = Union[bool, Callable[[Job], bool]]
 

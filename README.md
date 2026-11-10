@@ -243,8 +243,11 @@ publishes an open board its own terms and robots.txt allow.
   conditional requests (`ETag` and `Last-Modified`) for anything read twice in a run, and
   across runs with a cache folder, and an honest `User-Agent` naming this project.
 - **XML that declares a DTD or entities is never parsed**, so a hostile feed cannot expand.
-- **A board that answers 429 or 503 is left alone** for the rest of the run, and a
-  documented rate limit (Rippling's 100 requests in 10 minutes) is kept below.
+- **A host that answers 429 or 503 is sent nothing more** until the pause its
+  `Retry-After` names has passed, or for ten minutes when it names none, from any board read
+  from it; a request in that time is not sent, and says so. A documented rate limit
+  (Rippling's 100 requests in 10 minutes) is kept below across every board read from the
+  host in a process, and a request past it is not sent either.
 
 ## Is this allowed?
 

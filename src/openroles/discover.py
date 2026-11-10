@@ -45,21 +45,43 @@ PATTERNS = [
 # window.leverJobsOptions = {accountName: 'acme', ...}.
 _LEVER_EMBED = re.compile(r"leverJobsOptions[^}]{0,400}?accountName['\"]?\s*:\s*['\"]" + _SLUG + "['\"]", re.I)
 # Systems a careers page may use that openroles cannot read, and why, so "nothing found"
-# says what was there.
+# says what was there: every system in the README's "Not supported" table.
+_NO_ROBOTS = "its robots.txt disallows the job pages, or the board needs a sign-in"
+_TERMS = "its terms forbid automated reading of the careers pages"
+_SESSION = "its board is read through a session token issued to the browser"
+_UNCHECKED = "openroles has no reader for it yet: it has not been checked well enough to build one on"
+_JSON_LD = ("it publishes no open job API; if the careers site publishes its jobs for search engines, "
+            "read it as careersite:<the site's address>")
 UNSUPPORTED = [
     ("SuccessFactors", re.compile(r"\b(?:career\d*\.)?successfactors\.(?:com|eu)\b|\bjobs\.sap\.com\b", re.I),
      "its robots.txt disallows reading"),
-    ("iCIMS", re.compile(r"\.icims\.com\b", re.I),
-     "it publishes no open job API; if the careers site publishes its jobs for search engines, "
-     "read it as careersite:<the site's address>"),
-    ("Eightfold", re.compile(r"\.eightfold\.ai\b", re.I),
-     "it publishes no open job API; if the careers site publishes its jobs for search engines, "
-     "read it as careersite:<the site's address>"),
+    ("iCIMS", re.compile(r"\.icims\.com\b", re.I), _JSON_LD),
+    ("Eightfold", re.compile(r"\.eightfold\.ai\b", re.I), _JSON_LD),
     ("Taleo", re.compile(r"\.taleo\.net\b", re.I), "it publishes no open job board"),
     ("Oracle Recruiting", re.compile(r"\.oraclecloud\.com/hcmUI/CandidateExperience", re.I),
      "its job API is marked for internal use"),
     ("SmartRecruiters", re.compile(r"\b(?:jobs|careers)\.smartrecruiters\.com\b", re.I),
      "its robots.txt closes it to every crawler but LinkedIn's"),
+    ("Dayforce", re.compile(r"\bdayforcehcm\.com\b", re.I), _NO_ROBOTS),
+    ("UKG", re.compile(r"\brecruiting\d*\.ultipro\.com\b", re.I), _NO_ROBOTS),
+    ("Paycom", re.compile(r"\bpaycomonline\.(?:net|com)\b", re.I), _NO_ROBOTS),
+    ("Pinpoint", re.compile(r"\.pinpointhq\.com\b", re.I), _NO_ROBOTS),
+    ("BambooHR", re.compile(r"\.bamboohr\.com/(?:careers|jobs)\b", re.I), _TERMS),
+    ("Breezy", re.compile(r"\.breezy\.hr\b", re.I), _TERMS),
+    ("Cornerstone", re.compile(r"\.csod\.com\b", re.I), _SESSION),
+    ("BrassRing", re.compile(r"\bbrassring\.com\b", re.I), _SESSION),
+    ("Hireology", re.compile(r"\bhireology\.com\b", re.I), _SESSION),
+    ("Comeet", re.compile(r"\bcomeet\.(?:com|co)/(?:jobs|careers-api)\b", re.I), _SESSION),
+    ("Phenom", re.compile(r"\bphenompeople\.com\b", re.I),
+     "the sites checked ask, through robots.txt's Content-Signal, that their content not be used as "
+     "AI input; one that does not can be read as careersite:<the site's address>"),
+    ("Freshteam", re.compile(r"\.freshteam\.com\b", re.I), "it is being shut down by its vendor"),
+    ("ADP", re.compile(r"\b(?:workforcenow|recruiting|myjobs)\.adp\.com\b", re.I), _UNCHECKED),
+    ("Paylocity", re.compile(r"\brecruiting\.paylocity\.com\b", re.I), _UNCHECKED),
+    ("JOIN", re.compile(r"\bjoin\.com/companies/", re.I), _UNCHECKED),
+    ("TalentLyft", re.compile(r"\.talentlyft\.com\b", re.I), _UNCHECKED),
+    ("ApplicantPro", re.compile(r"\.applicantpro\.com\b", re.I), _UNCHECKED),
+    ("Jobvite", re.compile(r"\bjobs\.jobvite\.com\b", re.I), _UNCHECKED),
 ]
 _NOT_A_BOARD = {"embed", "js", "v1", "api", "static", "assets", "favicon.ico", "robots.txt",
                 # the vendors' own sites, not an employer's board

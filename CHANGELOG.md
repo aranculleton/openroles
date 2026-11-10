@@ -31,6 +31,13 @@
 
 ### Fixed
 
+- **A careers page on any system the README lists as not supported says which, and why.**
+  `detect` warned for six of them (SuccessFactors, iCIMS, Eightfold, Taleo, Oracle and
+  SmartRecruiters); a page on Dayforce, UKG, Paycom, Pinpoint, BambooHR, Breezy,
+  Cornerstone, BrassRing, Hireology, Comeet, Phenom, Freshteam, ADP, Paylocity, JOIN,
+  TalentLyft or ApplicantPro found nothing and said nothing. Each is recognised now, with
+  the README's reason, and a test holds the list to the README's table. Jobvite is added to
+  the systems not yet checked.
 - **A host that answers 429 or 503 is sent nothing more until its pause has passed.** Only
   Workday stopped when told to slow down, and only for the board it was reading: Rippling
   and Polymer went on asking for every posting's record, a careers site for every job

@@ -212,8 +212,8 @@ guess can be a stranger's board that took the name first, so confirm it from the
 employer's careers page; `openroles detect` says so on stderr. A Workday board cannot be
 guessed from a name: give its URL (either `tenant.wdN.myworkdayjobs.com` or
 `wdN.myworkdaysite.com/recruiting/tenant`). A careers site is never guessed: name it as
-`careersite:<address>`. When a careers page uses a system openroles cannot read, a
-warning names it.
+`careersite:<address>`. When a careers page uses a system openroles cannot read (any in
+the table below), a warning names it and says why.
 
 ### Not supported, and why
 
@@ -230,7 +230,7 @@ publishes an open board its own terms and robots.txt allow.
 | Oracle Recruiting | its job API is marked for internal use, and the job pages build their `JobPosting` in the browser |
 | Freshteam | being shut down by its vendor |
 | iCIMS, Eightfold | no open job API, but their careers sites usually publish `JobPosting` pages: read them as `careersite:` |
-| Taleo, ADP, Paylocity, JOIN, TalentLyft, ApplicantPro | not yet checked well enough to build a reader on |
+| Taleo, ADP, Paylocity, JOIN, TalentLyft, ApplicantPro, Jobvite | not yet checked well enough to build a reader on |
 
 ## Polite by design
 

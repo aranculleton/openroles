@@ -14,9 +14,26 @@
   `find_job_board` returns `{"board": "ats:token", "found": ...}` for each, where it
   returned the bare strings, and its description tells an agent to confirm a guess from
   the employer's careers page.
+- **`Job.hidden` says what was left out of a description because no reader sees it.** Since
+  0.4.0 a description leaves out comments, scripts and styles, and hidden elements, and
+  nothing said a posting had any. `job.hidden` is `{"comments": 1, "hidden elements": 2,
+  "tag characters": 40}`, only the kinds there were, or `{}`: text hidden from people is
+  often written for a model, which is worth knowing before one reads the posting. It counts
+  every part of a description built from several (Lever's lists, Personio's sections,
+  Recruitee's requirements, Rippling's company text) and a description read later from a
+  posting's own page (Workday, Rippling, Polymer). It is a property, not a field, so
+  `to_dict()`, equality and the JSON are as before; it survives a copy or a pickle.
+  `html_to_text` gives a `models.Shown`, a `str` that carries the same count, where it left
+  something out; a `Job` keeps the count and plain text.
 
 ### Changed
 
+- **Unicode tag characters are left out of every field.** U+E0000 to U+E007F show
+  nothing on a page, and a model reads a run of them as the ASCII text each shadows, so a
+  sentence written in them reached `description`, `title` or any other field unseen by
+  people and read by a model. They are left out now, as hidden elements are, except in a
+  subdivision flag (England's, Scotland's, Wales'), which is kept whole; a description
+  counts them in `job.hidden`.
 - **A Greenhouse or Gem posting is where its own location says, not where its office tags
   are.** Both systems file a posting under the employer's offices as well as its own
   location, and every office counted as a location, so a filter by place found postings

@@ -81,6 +81,11 @@ openroles.job_id("https://www.acme.example/careers/?gh_jid=4012345")
 # 'gh-4012345': the same id fetch() gives that posting, from its address alone
 ```
 
+`job.hidden` says what was left out of a posting's description because no reader sees it,
+such as `{"hidden elements": 2, "tag characters": 40}`, and is `{}` for most. Text hidden
+from people is often written for a model, so it is worth a look before one reads the
+posting.
+
 `job_id` is for matching one posting found in two places, read from the employer's board
 and linked from a job site. It reads Greenhouse (any page with `gh_jid` too), Lever,
 Ashby, Rippling, Workable, Personio and Workday addresses, fetches nothing, and gives ""
@@ -175,7 +180,7 @@ Every role, from every system, has the same fields:
 | `compensation` | the posted pay band, where the employer publishes one, as the board words it |
 | `salary_min`, `salary_max`, `salary_currency`, `salary_period` | the same band as numbers, its ISO currency code and `hour`, `day`, `week`, `month`, `year` or `""` (a period such as every two weeks), only where the board publishes them as numbers (Lever, Ashby, Recruitee, Rippling, ClearCompany, careers sites); never read out of a description |
 | `deadline` | where the board provides one |
-| `description` | plain text: HTML removed, and with it what no page shows (comments, scripts, hidden elements) |
+| `description` | plain text: HTML removed, and with it what no page shows (comments, scripts, hidden elements, Unicode tag characters); `job.hidden` says what was left out, and is not part of `to_dict()` |
 
 ## Supported systems
 

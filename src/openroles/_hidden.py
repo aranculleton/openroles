@@ -25,6 +25,10 @@ from __future__ import annotations
 
 import re
 
+# What is left out, by kind, as `dropped` counts it. A <noscript> or <template> is a hidden
+# element, and so is the rest of a text a tag whose quote never closes runs on into.
+COMMENTS, SCRIPTS, HIDDEN = "comments", "scripts and styles", "hidden elements"
+
 # A text with none of these in it has nothing to drop, and is not read at all.
 _CAN_HIDE = ("<!--", "<script", "<noscript", "<template", "hidden", "style")
 # A comment, or a tag with its name, its attributes up to a quote or a ">", and what stopped them.
@@ -153,11 +157,14 @@ class _Reader:
         self.hidden = -1                # the position of the outermost hidden element, if any
         self.hidden_at = 0              # and where in `text` it starts
         self.sealed = False             # whether the rest of the text is hidden, whatever follows
+        self.counts: dict = {}          # what was left out: COMMENTS, SCRIPTS or HIDDEN -> how many
 
-    def drop(self, start: int, stop: int) -> None:
+    def drop(self, start: int, stop: int, kind: str = "") -> None:
         """Leave out text[start:stop]: a space stands in, where a word could be cut in two."""
         self.kept += (self.text[self.upto:start], " ")
         self.upto = stop
+        kind = kind or HIDDEN
+        self.counts[kind] = self.counts.get(kind, 0) + 1
 
     def push(self, name: str, start: int, hides: bool) -> None:
         k = len(self.open)
@@ -239,7 +246,7 @@ class _Reader:
                 found = _COMMENT_END.search(s, i + 2)
                 pos = found.end() if found else n
                 if self.hidden < 0:
-                    self.drop(i, pos)
+                    self.drop(i, pos, COMMENTS)
                 continue
             closing, name, attrs, ender = m.group(2, 3, 4, 5)
             name = name.translate(_LOWER)
@@ -259,7 +266,7 @@ class _Reader:
                 pos = _tag_end(s, found.end()) if found else -1
                 pos = pos if pos > 0 else n
                 if self.hidden < 0:
-                    self.drop(i, pos)
+                    self.drop(i, pos, SCRIPTS)
             else:
                 if name in _ENDS_P:
                     self.end_nearest("p", [], i)
@@ -286,9 +293,16 @@ class _Reader:
 def drop_hidden(s: str) -> str:
     """`s` without what no reader sees, and otherwise as it was: see the module's docstring.
     A text with nothing in it that could hide anything is returned as it is, unread."""
+    return dropped(s)[0]
+
+
+def dropped(s: str) -> tuple:
+    """(`drop_hidden(s)`, what it left out): {COMMENTS, SCRIPTS or HIDDEN: how many}, only
+    the kinds there were. A comment or a script inside a hidden element is part of it."""
     if "<" not in s:
-        return s
+        return s, {}
     low = s.lower()
     if not any(word in low for word in _CAN_HIDE):
-        return s
-    return _Reader(s).read()
+        return s, {}
+    reader = _Reader(s)
+    return reader.read(), reader.counts

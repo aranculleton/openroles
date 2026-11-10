@@ -18,6 +18,7 @@ from ..models import (
     RobotsDisallowed,
     as_str,
     clean,
+    describe,
     each_once,
     failed,
     html_to_text,
@@ -94,7 +95,7 @@ def fetch(token: str, details: Details = False, report: Optional[dict] = None) -
             errors[job.id] = err or "a job record that was not a job"
             continue
         rec = detail.get("item") if isinstance(detail.get("item"), dict) else detail
-        job.description = html_to_text(rec.get("description")) or None
+        describe(job, html_to_text(rec.get("description")))
         job.department = clean(rec.get("department")) or job.department
     if report is not None:
         report.update(listing_errors=[], detail_errors=errors, details_asked=len(want))

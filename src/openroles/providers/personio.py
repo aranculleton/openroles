@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, iso_day, joined, workplace_of
 from ._xml import parse, text_of
 
 DOMAINS = ("jobs.personio.de", "jobs.personio.com")
@@ -65,8 +65,8 @@ def _description(position) -> Optional[str]:
     for block in position.findall("jobDescriptions/jobDescription"):
         head, body = text_of(block, "name"), html_to_text(block.findtext("value") or "")
         if head or body:
-            parts.append(f"{head}\n{body}".strip())
-    return "\n\n".join(parts) or None
+            parts.append(joined([head, body], "\n"))
+    return joined(parts) or None
 
 
 def fetch(token: str, language: str = "en") -> List[Job]:

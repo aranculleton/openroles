@@ -8,7 +8,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional, Tuple
 
-from ._hidden import drop_hidden
+from ._hidden import dropped
 
 ATS = ("greenhouse", "lever", "ashby", "workday", "workable", "teamtailor", "personio",
        "recruitee", "rippling", "jazzhr", "gem", "polymer", "manatal", "homerun", "clearcompany",
@@ -99,8 +99,71 @@ class Job:
     salary_currency: str = ""
     salary_period: str = ""
 
+    def __post_init__(self):
+        _take_hidden(self)
+
+    @property
+    def hidden(self) -> dict:
+        """What openroles left out of `description` because no reader of the posting sees
+        it, by kind: {"comments": 1, "scripts and styles": 1, "hidden elements": 2,
+        "tag characters": 40}, only the kinds there were, and {} when there was nothing.
+
+        A hidden element is one with the `hidden` attribute, aria-hidden="true", or an
+        inline display:none or visibility:hidden, with everything in it; tag characters
+        (U+E0000 to U+E007F) show nothing and a model reads them as the ASCII they shadow.
+        Comments and style blocks are common and usually harmless. A hidden element or tag
+        characters are words written for a program and not for a person, which is worth
+        knowing before a model reads the posting. Not part of `to_dict()`."""
+        return dict(self.__dict__.get("_hidden") or {})
+
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+def _take_hidden(job: Job) -> None:
+    """Keep what was left out of a description that says so (`Shown`), and the description
+    as plain text."""
+    found = getattr(job.description, "hidden", None)
+    if isinstance(job.description, Shown):
+        job.description = str.__str__(job.description)
+    if found:
+        job.__dict__["_hidden"] = dict(found)
+    else:
+        job.__dict__.pop("_hidden", None)
+
+
+def describe(job: Job, text: Optional[str]) -> None:
+    """Give a Job its description after it was made, from a posting's own record read
+    later, with what was left out of it (`Job.hidden`)."""
+    job.description = text or None
+    _take_hidden(job)
+
+
+class Shown(str):
+    """Text a reader of the page sees, with what was left out of it to get there (`hidden`,
+    as `Job.hidden` says it). `html_to_text` gives one only where something was left out;
+    a Job keeps the count and plain text."""
+
+    def __new__(cls, text: str = "", hidden: Optional[dict] = None):
+        self = super().__new__(cls, text)
+        self.hidden = dict(hidden or {})
+        return self
+
+
+def _add(into: dict, found) -> dict:
+    for kind, n in (found or {}).items():
+        into[kind] = into.get(kind, 0) + n
+    return into
+
+
+def joined(parts, sep: str = "\n\n") -> str:
+    """The non-empty `parts` joined with `sep`, keeping what was left out of each."""
+    parts = [p for p in parts if p]
+    found: dict = {}
+    for part in parts:
+        _add(found, getattr(part, "hidden", None))
+    text = sep.join(parts)
+    return Shown(text, found) if found else text
 
 
 def each_once(jobs) -> List[Job]:
@@ -135,22 +198,51 @@ def _swap_tags(pattern, repl, s: str) -> str:
     return pattern.sub(repl, s[:cut]) + s[cut:]
 
 
+# Unicode tag characters (U+E0000 to U+E007F) show nothing, and a model reads a run of them as
+# the ASCII text each one shadows: a sentence written in them is on no page anyone sees. Their
+# one use in text is a subdivision flag (a black flag, two to seven tag letters or digits, and
+# U+E007F, as England's is), which is kept whole.
+_TAG_CHARS = re.compile("[\U000E0000-\U000E007F]")
+_TAG_FLAG = re.compile("\U0001F3F4[\U000E0030-\U000E0039\U000E0061-\U000E007A]{2,7}\U000E007F")
+
+
+def _untagged(text: str) -> Tuple[str, int]:
+    """(`text` without its tag characters, a subdivision flag apart, how many went)."""
+    if not _TAG_CHARS.search(text):
+        return text, 0
+    pieces, last = [], 0
+    for m in _TAG_FLAG.finditer(text):
+        pieces += (_TAG_CHARS.sub("", text[last:m.start()]), m.group(0))
+        last = m.end()
+    pieces.append(_TAG_CHARS.sub("", text[last:]))
+    out = "".join(pieces)
+    return out, len(text) - len(out)
+
+
 def html_to_text(content: str) -> str:
     """Plain text from an ATS's HTML, which some boards entity-encode twice. What no reader
     sees (comments, scripts, styles, hidden elements) is dropped first, and again after each
-    round of decoding, so what a board encoded twice is dropped too: see `_hidden`. Anything a
-    board sends there that is not text (a number, an object, a list) gives "", never an
-    exception."""
-    s = drop_hidden(content if isinstance(content, str) else "")
+    round of decoding, so what a board encoded twice is dropped too: see `_hidden`. Tag
+    characters go too. Where anything was left out, the text is a `Shown` that says what
+    (`.hidden`). Anything a board sends there that is not text (a number, an object, a list)
+    gives "", never an exception."""
+    found: dict = {}
+    s, counts = dropped(content if isinstance(content, str) else "")
+    _add(found, counts)
     for _ in range(3):
         un = html.unescape(s)
         if un == s:
             break
-        s = drop_hidden(un)
+        s, counts = dropped(un)
+        _add(found, counts)
     s = _swap_tags(_BREAK, "\n", s)
     s = _swap_tags(_TAG, lambda m: " " if m.group(1) is None else "", s)
     s = re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", s))
-    return "\n".join(line.strip() for line in s.splitlines()).strip()[:BODY_CAP]
+    text, tags = _untagged("\n".join(line.strip() for line in s.splitlines()).strip())
+    if tags:
+        found["tag characters"] = tags
+    text = text[:BODY_CAP]
+    return Shown(text, found) if found else text
 
 
 def html_or_plain(markup, plain) -> str:
@@ -158,10 +250,13 @@ def html_or_plain(markup, plain) -> str:
     board sent no HTML. A board's plain-text field is its HTML with the tags taken off and
     nothing else, so a comment or a hidden element's text is in it: `html_to_text` leaves it
     out of the HTML's. An HTML field that is there but shows no text gives "", and is not a
-    reason to read the plain one."""
+    reason to read the plain one. Tag characters are left out of either."""
     if isinstance(markup, str) and markup.strip():
         return html_to_text(markup)
-    return plain.strip() if isinstance(plain, str) else ""
+    if not isinstance(plain, str):
+        return ""
+    text, tags = _untagged(plain.strip())
+    return Shown(text, {"tag characters": tags}) if tags else text
 
 
 def failed(err: str, what: str) -> str:
@@ -226,11 +321,11 @@ def own_place_first(own: str, offices) -> List[str]:
 
 def clean(value) -> str:
     """One line of text, whitespace collapsed, from a field a board writes as text or a
-    number. Anything else (an object, a list, true) is "": written out as Python shows it,
-    it came out as text nobody wrote ("{'name': 'Leeds'}", "True")."""
+    number, without tag characters. Anything else (an object, a list, true) is "": written
+    out as Python shows it, it came out as text nobody wrote ("{'name': 'Leeds'}", "True")."""
     if isinstance(value, bool) or not isinstance(value, (str, int, float)):
         return ""
-    return " ".join(str(value or "").split())
+    return " ".join((_untagged(value)[0] if isinstance(value, str) else str(value)).split())
 
 
 # A posting is one record from a board, and one odd field in it is no reason to lose the

@@ -178,7 +178,7 @@ Every role, from every system, has the same fields:
 
 | System | Requests | Notes |
 |---|---|---|
-| Greenhouse | 1 per board | descriptions; every office a posting lists counts as one of its locations |
+| Greenhouse | 1 per board | descriptions; a posting's offices count as its locations only where its own location names no place ("Hybrid", a time zone): an office is the employer's tag, not where the job is |
 | Lever | 1 per board | descriptions with their requirement lists; EU boards found automatically |
 | Ashby | 1 per board | descriptions and posted pay. Ashby publishes no first-posted date, so `posted` is when the posting was last published |
 | Workday | 1 per 20 roles, plus 1 per description | `--query` searches the board, reading on while titles keep matching; `--country` narrows it by whatever facet the board files countries under; `--details` fetches descriptions, only for roles whose title passes `--query` |

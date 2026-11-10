@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Changed
+
+- **A Greenhouse or Gem posting is where its own location says, not where its office tags
+  are.** Both systems file a posting under the employer's offices as well as its own
+  location, and every office counted as a location, so a filter by place found postings
+  that are not there: on live boards, a role shown as "Berlin, Germany" is filed under six
+  European offices, one shown as "San Francisco, CA • New York, NY • United States" under
+  "Canada" and "US", one in Dublin under "Ireland Locations", and `location="Paris"` found
+  the Berlin one. A posting whose own location names a place now has that alone as its
+  `locations`; its offices count only where it names none ("Hybrid", "Remote", "On-site",
+  "Anywhere", "Multiple locations", a time zone, nothing), which is where these boards
+  record where the job is, as 0.2.0 found. `models.names_a_place` and
+  `models.own_place_first` are the rule. Gem's `location` is the same list joined.
+
 ### Fixed
 
 - **A host that answers 429 or 503 is sent nothing more until its pause has passed.** Only

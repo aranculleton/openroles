@@ -169,6 +169,37 @@ def workplace_of(*values) -> str:
     return ""
 
 
+# A posting's own location that names no place: a way of working ("Hybrid", "Remote",
+# "On-site"), "Anywhere", "Multiple locations", or a time zone. Where a board also files the
+# posting under offices, those say where the job is.
+_NO_PLACE = re.compile(
+    r"^\W*(?:(?:fully |100% )?remote|hybrid|on[- ]?site|in[- ]office|office[- ]based|flexible|distributed"
+    r"|anywhere|multiple locations|various(?: locations)?|(?:[a-z]+\s+)*time\s*zones?"
+    r"|(?:utc|gmt)\s*[+-]?\s*[0-9:]*)\W*$", re.I)
+
+
+def names_a_place(label) -> bool:
+    """Whether a posting's location label names somewhere, rather than a way of working
+    ("Hybrid", "Remote", "On-site"), "Anywhere", "Multiple locations" or a time zone."""
+    text = clean(label)
+    return bool(text) and not _NO_PLACE.match(text)
+
+
+def own_place_first(own: str, offices) -> List[str]:
+    """A posting's locations on a board that also files it under offices (Greenhouse, Gem).
+
+    An office is the employer's own tag, not a place the job is open at: a role a board shows
+    as "Berlin, Germany" was filed under six European offices, one shown as "San Francisco,
+    CA • New York, NY • United States" under "Canada" and "US", and one in Dublin under
+    "Ireland Locations". So a posting that names its own place is where it says, and its
+    offices count only where it names none ("Hybrid", a time zone, nothing), which is where
+    such a board records where the job is."""
+    own = clean(own)
+    if names_a_place(own):
+        return [own]
+    return list(dict.fromkeys(x for x in [own, *(clean(o) for o in offices)] if x))
+
+
 def clean(value) -> str:
     """One line of text, whitespace collapsed, from a field a board writes as text or a
     number. Anything else (an object, a list, true) is "": written out as Python shows it,

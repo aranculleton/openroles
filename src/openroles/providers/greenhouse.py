@@ -20,6 +20,7 @@ from ..models import (
     html_to_text,
     ident,
     iso_day,
+    own_place_first,
     workplace_of,
 )
 
@@ -59,10 +60,11 @@ def fetch(token: str) -> List[Job]:
         location = clean(as_dict(j.get("location")).get("name"))
         depts = [clean(d.get("name")) for d in as_list(j.get("departments")) if isinstance(d, dict)]
         # A posting's location can be "Hybrid" or a time zone, with where the job is
-        # recorded only under its offices; a filter by place read the first alone.
+        # recorded only under its offices. Where it names a place, its offices are the
+        # employer's own tags and not where the job is: see own_place_first.
         offices = [clean(o.get("location") or o.get("name")) for o in as_list(j.get("offices"))
                    if isinstance(o, dict)]
-        every = list(dict.fromkeys(x for x in [location, *offices] if x))
+        every = own_place_first(location, offices)
         out.append(Job(
             id=f"gh-{number}",
             ats="greenhouse",

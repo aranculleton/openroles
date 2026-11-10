@@ -24,7 +24,8 @@
   posting's own page (Workday, Rippling, Polymer). It is a property, not a field, so
   `to_dict()`, equality and the JSON are as before; it survives a copy or a pickle.
   `html_to_text` gives a `models.Shown`, a `str` that carries the same count, where it left
-  something out; a `Job` keeps the count and plain text.
+  something out; a `Job` keeps the count and plain text. The MCP tool `list_open_roles`
+  adds it to a role as `hidden` when descriptions are asked for.
 
 ### Changed
 
@@ -48,6 +49,12 @@
 
 ### Fixed
 
+- **The MCP tool `list_open_roles` reads the numbers an agent sends as text, and refuses
+  the ones it cannot use.** `since_days` sent as "7" (as some agents send every argument)
+  failed with a `TypeError` from deep inside, `limit` was not held to the 200 its schema
+  says, and `remote_only` or `include_descriptions` sent as "false" read as yes. "7" and
+  7.0 are 7 now, "true" and "false" are read as they say, `limit` is at most 200, and a
+  value that is not a whole number of at least one is a tool error that names it.
 - **A posting listed on two pages of a board comes back once.** Teamtailor, Manatal,
   Polymer and Rippling are read page by page, and a posting added or removed ahead of a
   page while it is read moves another onto the next one, which then lists it again: it came

@@ -4,6 +4,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional
 from urllib.parse import parse_qs, urlsplit
 
@@ -184,16 +185,24 @@ GUESSED = ("greenhouse", "lever", "ashby", "workable", "teamtailor", "recruitee"
 def guess(company: str) -> List[Board]:
     """Boards found by trying the employer's likely board names on every system a name can
     find, found "guessed": a board under the name exists, and nothing yet shows it is this
-    employer's."""
-    found = []
-    for slug in slugs(company):
-        for ats in GUESSED:
-            if READERS[ats].exists(slug):
+    employer's. Each name is tried on every system at once, since each system is its own
+    host (and each host still has its two requests at most): one after another, a name took
+    as long as thirteen systems' answers and robots.txt files added up."""
+    found: List[Board] = []
+    with ThreadPoolExecutor(max_workers=len(GUESSED)) as pool:
+        for slug in slugs(company):
+            def tried(ats: str, slug: str = slug) -> bool:
+                try:
+                    return bool(READERS[ats].exists(slug))
+                except Exception as e:  # noqa: BLE001  one system failing is no reason to lose the rest
+                    logging.getLogger("openroles").debug("%s:%s could not be tried: %r", ats, slug, e)
+                    return False
+            for ats, exists in zip(GUESSED, pool.map(tried, GUESSED)):
                 board = Board(ats, slug, "guessed")
-                if board not in found:
+                if exists and board not in found:
                     found.append(board)
-        if found:
-            break
+            if found:
+                break
     return found
 
 

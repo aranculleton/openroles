@@ -49,6 +49,12 @@
 
 ### Fixed
 
+- **A board is found from a company's name in a few seconds, not twenty.** `detect` tried
+  each likely name on thirteen systems one after another, each waiting on its own answer
+  and its robots.txt: `openroles detect Figma` took 17 seconds. Each name is tried on every
+  system at once now, since each is its own host (and each host still gets two requests at
+  most), in 3.5 seconds; the boards come back in the same order as before, and one system
+  that fails no longer stops the rest from being tried.
 - **The MCP tool `list_open_roles` reads the numbers an agent sends as text, and refuses
   the ones it cannot use.** `since_days` sent as "7" (as some agents send every argument)
   failed with a `TypeError` from deep inside, `limit` was not held to the 200 its schema

@@ -31,6 +31,11 @@
 
 ### Fixed
 
+- **The Workday reader has `exists(token)`, as every other reader does.** Code that walks
+  `openroles.providers.READERS` and asks each reader whether a board exists raised
+  `AttributeError` on Workday. `workday.exists("tenant.wdN/Site")` reads the board's first
+  page where robots.txt allows it, and a test holds every reader to `fetch`, `exists` and
+  `hosts`.
 - **A careers page on any system the README lists as not supported says which, and why.**
   `detect` warned for six of them (SuccessFactors, iCIMS, Eightfold, Taleo, Oracle and
   SmartRecruiters); a page on Dayforce, UKG, Paycom, Pinpoint, BambooHR, Breezy,

@@ -473,6 +473,18 @@ def fetch(token: str, query: Union[None, str, Iterable[str]] = None, country: st
     return jobs
 
 
+def exists(token: str) -> bool:
+    """Whether a Workday board answers at this "tenant.wdN/Site" token, where robots.txt
+    allows reading it: one request for its first page."""
+    try:
+        board = WorkdayBoard(token)
+        board.check_robots()
+        board.first()
+    except BoardError:
+        return False
+    return True
+
+
 def hosts(token: str) -> List[str]:
     """The hosts reading this board calls, for a network allowlist. Nothing is fetched."""
     m = TOKEN.match(token or "")

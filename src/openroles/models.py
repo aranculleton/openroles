@@ -103,6 +103,18 @@ class Job:
         return asdict(self)
 
 
+def each_once(jobs) -> List[Job]:
+    """Each posting once, the first time it comes, by its id. A board read page by page while
+    it changes lists a posting on two pages when one is added or removed ahead of it."""
+    seen: set = set()
+    out = []
+    for job in jobs:
+        if job.id not in seen:
+            seen.add(job.id)
+            out.append(job)
+    return out
+
+
 # A tag is anything between "<" and ">". The tag of an inline element (group 1) leaves nothing
 # in its place, as it leaves nothing between the words on either side of it on a page; any other
 # tag leaves a space. (Block elements and <br> end a line: _BREAK, which is read first.)

@@ -13,7 +13,7 @@ from typing import List, Optional
 from urllib.parse import urlsplit
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, failed, html_to_text, iso_day, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, each_once, failed, html_to_text, iso_day, workplace_of
 from ._xml import parse, text_of
 
 NS = "{https://teamtailor.com/locations}"
@@ -112,7 +112,7 @@ def fetch(token: str) -> List[Job]:
             description=html_to_text(item.findtext("description") or "") or None,
             workplace=workplace or workplace_of(*places),
         ))
-    return out
+    return each_once(out)       # paged by offset: a posting added ahead of a page repeats one
 
 
 def hosts(token: str) -> List[str]:

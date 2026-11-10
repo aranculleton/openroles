@@ -195,6 +195,8 @@ def fetch(target: Union[str, Board], query: Optional[str] = None,
         logging.getLogger("openroles").warning(
             "%d of %d boards could not be read: %s", len(failed), len(boards),
             "; ".join(str(e) for e in failed))
+    from .models import each_once
+    jobs = each_once(jobs)
     jobs.sort(key=lambda j: j.posted or "", reverse=True)
     return jobs[:limit] if limit else jobs
 

@@ -11,7 +11,7 @@ from typing import List
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, clean, failed, html_to_text, ident, workplace_of
+from ..models import BoardError, Job, RobotsDisallowed, clean, each_once, failed, html_to_text, ident, workplace_of
 
 HOST = "api.manatal.com"
 BASE = "https://api.manatal.com/open/v3/career-page/{slug}/jobs/"
@@ -70,7 +70,7 @@ def fetch(token: str) -> List[Job]:
             description=html_to_text(r.get("description")) or None,
             workplace="remote" if remote else workplace_of(place),
         ))
-    return out
+    return each_once(out)       # paged: a posting added ahead of a page repeats one
 
 
 def hosts(token: str) -> List[str]:

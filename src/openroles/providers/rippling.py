@@ -23,6 +23,7 @@ from ..models import (
     as_list,
     as_str,
     clean,
+    each_once,
     failed,
     html_to_text,
     ident,
@@ -131,6 +132,7 @@ def fetch(token: str, details: Details = False, report: Optional[dict] = None) -
             department=clean(dept.get("name")) if isinstance(dept, dict) else clean(dept),
             workplace=workplace,
         ))
+    out = each_once(out)        # paged: a posting added ahead of a page repeats one
     want = [j for j in out if details is True or (callable(details) and details(j))][:DETAIL_CAP]
     failed: dict = {}
     for job in want:

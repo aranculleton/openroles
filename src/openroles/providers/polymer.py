@@ -12,7 +12,19 @@ from typing import Callable, List, Optional, Union
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, as_str, clean, failed, html_to_text, ident, iso_day, workplace_of
+from ..models import (
+    BoardError,
+    Job,
+    RobotsDisallowed,
+    as_str,
+    clean,
+    each_once,
+    failed,
+    html_to_text,
+    ident,
+    iso_day,
+    workplace_of,
+)
 
 HOST = "api.polymer.co"
 BASE = "https://api.polymer.co/v1/hire/organizations/{slug}/jobs"
@@ -73,6 +85,7 @@ def fetch(token: str, details: Details = False, report: Optional[dict] = None) -
             compensation=clean(i.get("salary_pretty")),
             workplace=workplace,
         ))
+    out = each_once(out)        # paged: a posting added ahead of a page repeats one
     want = [j for j in out if details is True or (callable(details) and details(j))][:DETAIL_CAP]
     errors: dict = {}
     for job in want:

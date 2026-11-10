@@ -31,6 +31,12 @@
 
 ### Fixed
 
+- **A posting listed on two pages of a board comes back once.** Teamtailor, Manatal,
+  Polymer and Rippling are read page by page, and a posting added or removed ahead of a
+  page while it is read moves another onto the next one, which then lists it again: it came
+  back twice, with one id, and Rippling and Polymer asked for its record twice. Each now
+  keeps the first, before any record is asked for, and `fetch` never returns one id twice
+  (`models.each_once`).
 - **The Workday reader has `exists(token)`, as every other reader does.** Code that walks
   `openroles.providers.READERS` and asks each reader whether a board exists raised
   `AttributeError` on Workday. `workday.exists("tenant.wdN/Site")` reads the board's first

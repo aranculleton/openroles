@@ -1,6 +1,7 @@
 """Which ATS an employer's jobs live on, from a URL, a careers page or a company name."""
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 from typing import List, Optional
@@ -68,30 +69,32 @@ _NOT_A_BOARD = {"embed", "js", "v1", "api", "static", "assets", "favicon.ico", "
 
 
 def parse(text: str) -> Optional[Board]:
-    """A Board from "ats:token" or from any board URL. None when it names no board."""
+    """A Board from "ats:token" or from any board URL, found "named". None when it names no
+    board."""
     text = (text or "").strip()
     head, sep, tail = text.partition(":")
     if sep and head.lower() in ATS and not tail.startswith("//"):
         token = tail.strip()
         if head.lower() == "workday":
             token = workday.token_from(token) or token
-        return Board(head.lower(), token) if token else None
+        return Board(head.lower(), token, "named") if token else None
     wd = workday.token_from(text)
     if wd:
-        return Board("workday", wd)
+        return Board("workday", wd, "named")
     if "greenhouse.io" in text and "for=" in text:
         q = parse_qs(urlsplit(text if "//" in text else "https://" + text).query)
         if q.get("for"):
-            return Board("greenhouse", q["for"][0])
+            return Board("greenhouse", q["for"][0], "named")
     for ats, rx in PATTERNS:
         m = rx.search(text)
         if m and m.group(1).lower() not in _NOT_A_BOARD:
-            return Board(ats, m.group(1).rstrip("."))
+            return Board(ats, m.group(1).rstrip("."), "named")
     return None
 
 
 def in_page(url: str) -> List[Board]:
-    """Every board a careers page links to or embeds, if its robots.txt allows reading it."""
+    """Every board a careers page links to or embeds, found "linked", if its robots.txt allows
+    reading it."""
     parts = urlsplit(url if "//" in url else "https://" + url)
     path = parts.path or "/"
     ok, _why = _http.robots_allows(parts.netloc, [path])
@@ -108,9 +111,9 @@ def in_page(url: str) -> List[Board]:
         link = m.group(0)
         board = parse("https:" + link if link.startswith("//") else link)
         if board and board not in found:
-            found.append(board)
+            found.append(dataclasses.replace(board, found="linked"))
     for m in _LEVER_EMBED.finditer(body):
-        board = Board("lever", m.group(1))
+        board = Board("lever", m.group(1), "linked")
         if board not in found:
             found.append(board)
     if not found:
@@ -157,12 +160,14 @@ GUESSED = ("greenhouse", "lever", "ashby", "workable", "teamtailor", "recruitee"
 
 
 def guess(company: str) -> List[Board]:
-    """Boards found by trying the employer's likely board names on every system a name can find."""
+    """Boards found by trying the employer's likely board names on every system a name can
+    find, found "guessed": a board under the name exists, and nothing yet shows it is this
+    employer's."""
     found = []
     for slug in slugs(company):
         for ats in GUESSED:
             if READERS[ats].exists(slug):
-                board = Board(ats, slug)
+                board = Board(ats, slug, "guessed")
                 if board not in found:
                     found.append(board)
         if found:
@@ -171,7 +176,8 @@ def guess(company: str) -> List[Board]:
 
 
 def detect(target: str) -> List[Board]:
-    """The boards behind a board URL, an "ats:token", a careers page or a company name."""
+    """The boards behind a board URL, an "ats:token", a careers page or a company name, each
+    with how it was found (`Board.found`): "named", "linked" or "guessed"."""
     board = parse(target)
     if board:
         return [board]

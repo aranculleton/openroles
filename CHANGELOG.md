@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### New
+
+- **`detect` says how it found each board: named, linked or guessed.** `Board.found` is
+  "named" when the target was the board's own URL or `ats:token`, "linked" when the
+  careers page given links to it or embeds it, and "guessed" when a board exists under a
+  name the company might use, which can be a small organisation's that took the name
+  first. It is not part of a board's identity (two boards with one system and token are
+  equal, and `repr` is as before), and a `Board` made by hand has "". `openroles detect`
+  prints the same lines and adds a warning on stderr for a guess; the MCP tool
+  `find_job_board` returns `{"board": "ats:token", "found": ...}` for each, where it
+  returned the bare strings, and its description tells an agent to confirm a guess from
+  the employer's careers page.
+
 ### Changed
 
 - **A Greenhouse or Gem posting is where its own location says, not where its office tags

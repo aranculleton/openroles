@@ -26,8 +26,12 @@ TOOLS = [
         "name": "find_job_board",
         "description": (f"Find which applicant tracking system ({systems()}) an employer "
                         "posts its jobs on. Give a company name, its "
-                        "careers page URL or a job board URL. Returns boards as ats:token, "
-                        "which list_open_roles accepts."),
+                        "careers page URL or a job board URL. Returns each board as "
+                        "{board: ats:token, which list_open_roles accepts, found: how}. found "
+                        "is 'named' (the URL or ats:token given), 'linked' (the careers page "
+                        "given links to it) or 'guessed' (a board exists under a name the "
+                        "company might use; it may be another organisation's, so confirm it "
+                        "by giving the employer's careers page URL)."),
         "inputSchema": {
             "type": "object",
             "properties": {"target": {"type": "string",
@@ -74,7 +78,7 @@ def call_tool(name: str, args: dict) -> dict:
     try:
         if name == "find_job_board":
             boards = detect(str(args.get("target") or ""))
-            return _result([str(b) for b in boards] if boards else
+            return _result([{"board": str(b), "found": b.found} for b in boards] if boards else
                            f"no {systems()} board found")
         if name == "list_open_roles":
             jobs = fetch(str(args.get("target") or ""), query=args.get("query") or None,

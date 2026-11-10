@@ -90,7 +90,12 @@ def job_id(url: str) -> str:
 
 
 def detect(target: str) -> List[Board]:
-    """The job boards behind a board URL, "ats:token", a careers page or a company name."""
+    """The job boards behind a board URL, "ats:token", a careers page or a company name.
+
+    Each Board's `found` says how: "named" (the target was its URL or ats:token), "linked"
+    (the careers page given links to it or embeds it) or "guessed" (a board exists under a
+    name the company might use; confirm it on the employer's own careers page before taking
+    it for theirs)."""
     from .discover import detect as _detect
     return _detect(target)
 

@@ -63,8 +63,10 @@ openroles linear --cache ~/.cache/openroles        # an unchanged board sends no
 ```python
 import openroles
 
-openroles.detect("Figma")
+boards = openroles.detect("Figma")
 # [Board(ats='greenhouse', token='figma'), Board(ats='ashby', token='figma')]
+[b.found for b in boards]
+# ['guessed', 'guessed']: boards under a name Figma might use; 'linked' from a careers page
 
 jobs = openroles.fetch("greenhouse:figma", query="data", location="New York")
 for job in jobs:
@@ -133,8 +135,9 @@ openroles asks itself, for anything else your application fetches.
 
 `openroles mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server over
 stdio, so Claude, Cursor and other agents can look up any employer's open roles
-themselves. Two tools: `find_job_board` and `list_open_roles` (descriptions left out
-unless asked for, to keep answers short).
+themselves. Two tools: `find_job_board` (each board with how it was found, so a guess is
+not taken for the employer's own) and `list_open_roles` (descriptions left out unless
+asked for, to keep answers short).
 
 Claude Code:
 
@@ -202,7 +205,11 @@ warning says to search with `--query`.
 
 `detect` finds a board from a company name (every system but Workday and ClearCompany,
 by trying the names an employer is likely to use), from any board URL, and from a careers
-page that links to or embeds one, however the page writes it. A Workday board cannot be
+page that links to or embeds one, however the page writes it. Each board says how it was
+found (`Board.found`): `named` (its URL or `ats:token` was given), `linked` (the careers
+page links to it) or `guessed` (a board exists under a name the employer might use). A
+guess can be a stranger's board that took the name first, so confirm it from the
+employer's careers page; `openroles detect` says so on stderr. A Workday board cannot be
 guessed from a name: give its URL (either `tenant.wdN.myworkdayjobs.com` or
 `wdN.myworkdaysite.com/recruiting/tenant`). A careers site is never guessed: name it as
 `careersite:<address>`. When a careers page uses a system openroles cannot read, a

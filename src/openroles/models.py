@@ -27,6 +27,8 @@ def systems(last: str = "or") -> str:
     names = [NAMES[a] for a in ATS if a != "careersite"]
     return ", ".join(names[:-1]) + f" {last} " + names[-1]
 BODY_CAP = 50_000
+# How `detect` found a board (Board.found), most certain first; "" for one made by hand.
+FOUND = ("named", "linked", "guessed", "")
 
 
 class BoardError(Exception):
@@ -45,13 +47,23 @@ class Board:
     (from https://tenant.wdN.myworkdayjobs.com/Site); for Teamtailor and Recruitee the
     careers site's name or, on the employer's own domain, its host; for ClearCompany the
     site id its careers page prints; for a careers site, its address.
+
+    `found` is how `detect` found it: "named" (the target was the board's own URL or
+    ats:token), "linked" (the careers page given links to it or embeds it) or "guessed" (a
+    board exists under a name the company might use, and nothing yet shows it is theirs: a
+    small organisation may have taken the name first). "" for a Board made by hand. It is
+    not part of the board's identity: two Boards with one ats and token are equal.
     """
     ats: str
     token: str
+    found: str = field(default="", compare=False, repr=False)
 
     def __post_init__(self):
         if self.ats not in ATS:
             raise ValueError(f"unknown ATS {self.ats!r}; expected one of {', '.join(ATS)}")
+        if self.found not in FOUND:
+            raise ValueError(f"unknown way of finding a board {self.found!r}; expected one of "
+                             f"{', '.join(repr(f) for f in FOUND)}")
 
     def __str__(self) -> str:
         return f"{self.ats}:{self.token}"

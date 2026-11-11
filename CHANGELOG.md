@@ -49,6 +49,29 @@
 
 ### Fixed
 
+- **A robots.txt that starts with a byte-order mark is obeyed.** Saved with one, its first
+  field read as the mark and "user-agent", so a leading `User-agent: *` was not seen, every
+  rule of that group was dropped for want of an agent, and `Disallow: /` read as allowing
+  everything. One leading mark is skipped now, wherever a robots.txt is read (its rules, its
+  Crawl-delay, its Content-Signal, and whether it is a robots file at all).
+- **A rule matches its path however either is percent-encoded, as RFC 9309 says.** Only the
+  rule was decoded, so `Disallow: /search?q=café` and `Disallow: /search?q=caf%C3%A9` never
+  matched the address `/search?q=caf%C3%A9`, and read as allowing it; a board token with a
+  character outside ASCII in it, which openroles escapes in the path it asks about, was
+  never matched by the rule written for it. Both are now put in one form before they are
+  compared (RFC 9309, section 2.2.2): anything outside ASCII, and a space, percent-encoded
+  as UTF-8, an escaped unreserved character ("%62", "%7E") decoded, and every other escape
+  kept, its hex in capitals. So "%2F" is still not "/", and an escaped "*" or "$" in a rule
+  is that character, not a wildcard or the end.
+- **A "$" ends a pattern only as its last character.** Anywhere else it is the character
+  itself, as RFC 9309 and Google's parser read it: `Disallow: /a$b` did not match `/a$b`.
+- **A robots.txt rule that is not UTF-8 leaves permission unconfirmed.** A robots.txt saved
+  in another encoding with such a byte in a rule reads it as U+FFFD, and a pattern holding
+  one matches no path, so the rule was as good as absent. Where robots.txt must allow a
+  read (Ashby, Workday, Homerun, ClearCompany, careers sites), a User-agent, Allow or
+  Disallow line holding one now leaves permission unconfirmed, as a robots.txt that cannot
+  be read does (`robots.has_undecodable_rule`). A robots.txt is also parsed once for all the
+  paths and agents a read asks about, not once for each.
 - **A board is found from a company's name in a few seconds, not twenty.** `detect` tried
   each likely name on thirteen systems one after another, each waiting on its own answer
   and its robots.txt: `openroles detect Figma` took 17 seconds. Each name is tried on every

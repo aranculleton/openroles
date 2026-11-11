@@ -29,7 +29,7 @@ from collections import OrderedDict, deque
 from typing import Optional, Tuple
 
 from . import __version__
-from .robots import allowed, content_signals, crawl_delay, is_robots_body
+from .robots import allowed, content_signals, crawl_delay, has_undecodable_rule, is_robots_body
 
 USER_AGENT = f"openroles/{__version__} (+https://github.com/aranculleton/openroles)"
 TIMEOUT = 20
@@ -693,6 +693,9 @@ def robots_allows(host: str, paths) -> Tuple[bool, str]:
         if not is_robots_body(body):
             return False, ("robots.txt answered 200 with something that is not a robots "
                            "file, so permission is unconfirmed")
+        if has_undecodable_rule(body):
+            return False, (f"robots.txt on {host} has a rule that is not UTF-8 text, which no "
+                           "path can be matched against, so permission is unconfirmed")
         no = _no_ai(host, body)
         if no:
             return False, no

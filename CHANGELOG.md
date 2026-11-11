@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-11-11)
+
+A host that asks to slow down is left alone, robots.txt is matched as RFC 9309 says, an
+office tag is no longer taken for where a job is, and a description says what was left out
+of it.
 
 ### New
 

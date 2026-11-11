@@ -76,3 +76,10 @@ def test_what_was_left_out_survives_a_copy_and_is_not_part_of_equality():
     job.hidden["comments"] = 9                            # a copy: the Job is not changed
     assert job.hidden == {"hidden elements": 1}
     assert pickle.loads(pickle.dumps(Shown("a", {"comments": 1}))).hidden == {"comments": 1}
+
+
+def test_only_openroles_own_text_is_taken_for_a_count():
+    class Marked(str):
+        hidden = True                       # another library's str with an attribute of that name
+    job = Job(id="x-1", ats="lever", board="acme", title="A", url="u", description=Marked("Text."))
+    assert job.hidden == {} and isinstance(job.description, Marked)

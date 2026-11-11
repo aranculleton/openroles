@@ -123,8 +123,8 @@ class Job:
 def _take_hidden(job: Job) -> None:
     """Keep what was left out of a description that says so (`Shown`), and the description
     as plain text."""
-    found = getattr(job.description, "hidden", None)
-    if isinstance(job.description, Shown):
+    found = job.description.hidden if isinstance(job.description, Shown) else None
+    if found is not None:
         job.description = str.__str__(job.description)
     if found:
         job.__dict__["_hidden"] = dict(found)

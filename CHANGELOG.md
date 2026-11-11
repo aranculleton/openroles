@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.1 (2026-11-11)
+
+A description leaves out text an inline style hides by its size, colour, place or opacity,
+not only by display:none, and counts it.
+
+### Changed
+
+- **Text hidden by an inline style is left out of a description, whatever way the style
+  hides it.** 0.5.0 left out an element styled display:none or visibility:hidden and kept
+  the words of one styled to be just as unseen: `font-size: 0`, `color: transparent`,
+  `opacity: 0`, a `clip` or `clip-path` that leaves nothing of the box, a `text-indent`,
+  `margin-left` or `margin-top` of -1000 or less, a `left` or `top` of -1000 or less on a
+  positioned element, or a height or width of 0 with its overflow hidden. Those words
+  reached `description` with `job.hidden` saying nothing. They are left out now and counted
+  under "hidden elements". Each rule reads a declaration by its own property name, so
+  `background-color: transparent`, `min-height: 0` or `opacity: 0.5` hide nothing, and
+  `left` moves nothing on an element that is not positioned.
+
 ## 0.5.0 (2026-11-11)
 
 A host that asks to slow down is left alone, robots.txt is matched as RFC 9309 says, an

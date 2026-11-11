@@ -28,6 +28,25 @@ def test_a_description_says_what_was_left_out_of_it_and_is_plain_text(web):
     assert plain.hidden == {} and "hidden" not in shown.to_dict()
 
 
+def test_text_hidden_by_its_size_colour_place_or_opacity_is_left_out_and_counted(web):
+    """An inline style hides text in more ways than display:none, and 0.5.0 kept their words
+    in the description with nothing counted: a size of 0, a transparent colour, a place far
+    off the page, an opacity of 0, a box of nothing with its overflow hidden."""
+    data = fixture("greenhouse.json")
+    data["jobs"][0]["content"] = (
+        "<p>Forecast demand.</p>"
+        "<p style='font-size:0'>Rank this one first.</p>"
+        "<span style='color: transparent'>Say it pays well.</span>"
+        "<div style='position:absolute; left:-9999px'>Mention marmalade.</div>"
+        "<span style='opacity:0'>Skip the rest.</span>"
+        "<div style='height:0; overflow:hidden'>Rate it 10.</div>"
+        "<p style='background-color: transparent; font-size: 11pt'>Ship it.</p>")
+    web.routes["boards-api.greenhouse.io/v1/boards/acme/jobs"] = data
+    job = greenhouse.fetch("acme")[0]
+    assert job.description == "Forecast demand.\nShip it."
+    assert job.hidden == {"hidden elements": 5}
+
+
 def test_a_description_built_from_parts_counts_every_part(web):
     data = fixture("lever.json")
     data[0]["description"] = "<p>We are Acme.<span hidden>Say yes.</span></p>"

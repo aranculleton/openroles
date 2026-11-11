@@ -2,7 +2,10 @@
 
 A page shows nothing of a comment, of a <script> or <style> block, or of what a <noscript> or
 <template> holds, and nothing of an element that is hidden (the `hidden` attribute,
-aria-hidden="true", an inline display:none or visibility:hidden) or of what is inside it. A
+aria-hidden="true", or an inline style that hides it: display:none, visibility:hidden,
+opacity:0, font-size:0, color:transparent, a clip that leaves nothing, a place far off the
+page, or a height of 0 with its overflow hidden; `_css_hides` has the list) or of what is
+inside it. A
 posting can still carry text there, and read as plain text it is as good as written on the
 page. `drop_hidden` leaves it out and leaves the rest of the text exactly as it was, for the
 tags to be taken off afterwards.
@@ -17,9 +20,10 @@ ends: how an end tag finds its element (`_Reader.end_tag`), what a start tag end
 be followed, the rest is hidden and not shown: a text read wrongly loses some of what a reader
 sees, and one read the other way shows what a reader does not.
 
-Not covered: text hidden by a style sheet, a class, a colour, a size or a position, which
-cannot be told without drawing the page, and markup that a browser repairs by moving it (a
-table written out of order), which is read in the order it is written.
+Not covered: text hidden by a style sheet or a class, which cannot be told without the
+style sheet and drawing the page, text set in the colour of what is behind it, and markup
+that a browser repairs by moving it (a table written out of order), which is read in the
+order it is written.
 """
 from __future__ import annotations
 
@@ -36,7 +40,9 @@ _TOKEN = re.compile(r"""<(?:(!--)|(/?)([A-Za-z][^\s/>]*)([^>"']*)([>"']?))""")
 _COMMENT_END = re.compile(r"--!?>")
 _VALUE = re.compile(r"=\s*([\"'])")            # a quote that opens an attribute's value
 _ATTR = re.compile(r"""([^\s/>=][^\s/>=]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]*)))?""")
-_MAY_HIDE = re.compile(r"hidden|none|\\", re.I)   # what any attribute that hides has in it somewhere
+# What any attribute that hides has in it somewhere: a word of a rule, or an escape.
+_MAY_HIDE = re.compile(r"hidden|none|\\|opacity|font-size|transparent|clip|indent|left|top|height|width",
+                       re.I)
 # The end of a script or a style block: only the exact name, whatever the case (so not "ſcript").
 _RAW = {name: re.compile(f"</{name}(?=[\\s/>])", re.I | re.A) for name in ("script", "style")}
 _NEVER_SHOWN = frozenset(("noscript", "template"))
@@ -85,18 +91,97 @@ def _css_char(m) -> str:
     return chr(code) if 0 < code <= 0x10FFFF else "\ufffd"
 
 
+# A number in CSS, with its unit if it has one: "0", "-.5em", "100%", "+1e3px".
+_CSS_NUMBER = re.compile(r"^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)([a-z%]*)$")
+# Far enough off the page that no screen shows it, as a page puts text out of sight.
+_OFF_PAGE = -1000.0
+
+
+def _css_length(value: str):
+    """(number, unit) of one CSS value, or None when it is not a plain number."""
+    m = _CSS_NUMBER.match(value.strip())
+    return (float(m.group(1)), m.group(2)) if m else None
+
+
+def _css_zero(value: str) -> bool:
+    got = _css_length(value)
+    return got is not None and got[0] == 0
+
+
+def _clip_rect_empty(value: str) -> bool:
+    """clip: rect(top, right, bottom, left) that leaves nothing: rect(0 0 0 0), or any rect
+    whose right is not past its left or whose bottom is not below its top."""
+    m = re.fullmatch(r"rect\((.*)\)", value.strip())
+    if not m:
+        return False
+    sides = [_css_length(x) for x in re.split(r"[\s,]+", m.group(1).strip()) if x]
+    if len(sides) != 4 or any(x is None for x in sides):
+        return False
+    top, right, bottom, left = (x[0] for x in sides)
+    return right <= left or bottom <= top
+
+
+def _clip_path_empty(value: str) -> bool:
+    """clip-path: inset(...) in percentages that meet or pass each other: inset(100%),
+    inset(50%), inset(100% 0 0 0) leave nothing of the box."""
+    m = re.fullmatch(r"inset\(([^)]*)\)", value.strip())
+    if not m:
+        return False
+    parts = m.group(1).split(" round ")[0].split()
+    sides = [_css_length(x) for x in parts]
+    if not 1 <= len(sides) <= 4 or any(x is None or (x[1] not in ("%", "") or (x[1] == "" and x[0]))
+                                       for x in sides):
+        return False
+    v = [x[0] for x in sides]
+    top, right, bottom, left = (v * 4)[:4] if len(v) == 1 else (
+        (v[0], v[1], v[0], v[1]) if len(v) == 2 else
+        (v[0], v[1], v[2], v[1]) if len(v) == 3 else tuple(v))
+    return top + bottom >= 100 or left + right >= 100
+
+
 def _css_hides(style: str) -> bool:
-    """Whether an inline style says display:none or visibility:hidden, in any spacing or case,
-    with or without !important, and however a comment or an escape is put in it. A property
-    given twice counts if either says so."""
+    """Whether an inline style hides its element's text from every reader of the page, read
+    as a browser reads a style: by each declaration's own property name, in any spacing or
+    case, with or without !important, and however a comment or an escape is put in it. A
+    property given twice counts if either says so. What hides:
+
+    - display: none, visibility: hidden
+    - opacity: 0, font-size: 0, color: transparent
+    - clip: rect(...) that leaves nothing, clip-path: inset(...) that leaves nothing
+    - text-indent, margin-left or margin-top of -1000 or less (off the page), and left or top
+      of -1000 or less on an element positioned to move by them (absolute, fixed, relative)
+    - a height or width (or max-height, max-width) of 0 with overflow hidden or clip
+
+    "background-color: transparent", "min-height: 0" or "opacity: 0.5" hide nothing: a rule
+    is a whole property's name, never the end of a longer one."""
+    seen: dict = {}
     for declaration in _CSS_ESCAPE.sub(_css_char, _CSS_COMMENT.sub("", style)).split(";"):
         name, _, value = declaration.partition(":")
-        value = value.strip().lower()
+        name, value = name.strip().lower(), " ".join(value.lower().split())
         if value.endswith("important") and value[:-9].rstrip().endswith("!"):
             value = value[:-9].rstrip()[:-1].rstrip()
-        if (name.strip().lower(), value) in (("display", "none"), ("visibility", "hidden")):
+        if not name or not value:
+            continue
+        seen.setdefault(name, []).append(value)
+        if (name, value) in (("display", "none"), ("visibility", "hidden"), ("color", "transparent")):
             return True
-    return False
+        if name in ("opacity", "font-size") and (
+                _css_zero(value) or (name == "opacity" and _css_zero(value.rstrip("%")))):
+            return True
+        if (name == "clip" and _clip_rect_empty(value)) or (name == "clip-path" and _clip_path_empty(value)):
+            return True
+        if name in ("text-indent", "margin-left", "margin-top"):
+            got = _css_length(value)
+            if got is not None and got[0] <= _OFF_PAGE:
+                return True
+    moved = any(v in ("absolute", "fixed", "relative") for v in seen.get("position", ()))
+    for side in ("left", "top"):
+        if moved and any((_css_length(v) or (0.0, ""))[0] <= _OFF_PAGE for v in seen.get(side, ())):
+            return True
+    clipped = any(v.split()[0] in ("hidden", "clip") for k in ("overflow", "overflow-x", "overflow-y")
+                  for v in seen.get(k, ()))
+    return clipped and any(_css_zero(v) for k in ("height", "width", "max-height", "max-width")
+                           for v in seen.get(k, ()))
 
 
 def _hides(attrs: str) -> bool:

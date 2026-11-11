@@ -194,7 +194,7 @@ Every role, from every system, has the same fields:
 | Teamtailor | 1 per 100 roles | descriptions; hybrid and remote; a careers site on the employer's own domain works too |
 | Personio | 1 per board | descriptions in English where the employer wrote them; `.de` and `.com` accounts |
 | Recruitee | 1 per board | descriptions, pay and closing dates. From 10 February 2027 Recruitee asks for each employer's own token, after which a board reads as needing it |
-| Rippling | 1 per board, plus 1 per description | descriptions and dates come from each posting's own record, fetched only with `--details` or a `--query`, at most 80 a board (Rippling allows 100 requests in 10 minutes) |
+| Rippling | 1 per board, plus 1 per description | descriptions and dates come from each posting's own record, fetched only with `--details` or a `--query`, at most 80 a board and 90 in any ten minutes across boards (Rippling allows 100 requests in 10 minutes) |
 | JazzHR | 1 per board | descriptions; no date or pay. The feed is regenerated once a day |
 | Gem | 1 per board | descriptions; hybrid and remote |
 | Polymer | 1 per 20 roles, plus 1 per description | pay; descriptions as for Rippling, at most 60 a board |

@@ -41,13 +41,15 @@ def is_robots_body(text: str) -> bool:
 
 
 def has_undecodable_rule(text: str) -> bool:
-    """Whether a User-agent, Allow or Disallow line holds U+FFFD, which stands where a byte
-    that is not UTF-8 was read. A robots.txt saved in another encoding with such a byte in a
-    rule gives a pattern no path can match, and the rule read as if it were not there."""
+    """Whether a User-agent or Disallow line holds U+FFFD, which stands where a byte that is
+    not UTF-8 was read. A robots.txt saved in another encoding with such a byte in a rule gives
+    a pattern no path can match, and the rule read as if it were not there: the file would read
+    as more open than it is. An Allow line that cannot be read only makes the file read
+    stricter, so it never refuses the whole host."""
     for raw in _unmarked(text).splitlines():
         line = raw.split("#", 1)[0]
         if "\ufffd" in line and line.partition(":")[0].replace("\ufffd", "").strip().lower() in (
-                "user-agent", "allow", "disallow"):
+                "user-agent", "disallow"):
             return True
     return False
 

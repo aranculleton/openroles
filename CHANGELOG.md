@@ -7,6 +7,11 @@ not only by display:none, and counts it.
 
 ### Changed
 
+- **An Allow line in robots.txt that cannot be read no longer refuses the whole host.** A
+  rule holding a byte that is not UTF-8 still leaves permission unconfirmed where it is a
+  User-agent or Disallow line, which would read as more open than the file is; an unreadable
+  Allow line can only make the file read stricter, so the rest of the file is obeyed as
+  written.
 - **Text hidden by an inline style is left out of a description, whatever way the style
   hides it.** 0.5.0 left out an element styled display:none or visibility:hidden and kept
   the words of one styled to be just as unseen: `font-size: 0`, `color: transparent`,

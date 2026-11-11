@@ -189,6 +189,8 @@ def test_a_rule_that_is_not_utf8_leaves_permission_unconfirmed(monkeypatch):
     garbled = "User-agent: *\nDisallow: /caf�\n"
     assert has_undecodable_rule(garbled)
     assert not has_undecodable_rule("# caf�\nUser-agent: *\nSitemap: /caf�.xml\nDisallow: /x\n")
+    # An Allow line that cannot be read only makes the file stricter: the host is not refused.
+    assert not has_undecodable_rule("User-agent: *\nDisallow: /\nAllow: /caf�/\n")
     monkeypatch.setattr(_http, "robots_txt", lambda host: (200, garbled))
     ok, why = _http.robots_allows("acme.example", ["/jobs"])
     assert ok is False and "not UTF-8" in why

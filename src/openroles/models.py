@@ -8,7 +8,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional, Tuple
 
-from ._hidden import drop_hidden
+from ._hidden import dropped
 
 ATS = ("greenhouse", "lever", "ashby", "workday", "workable", "teamtailor", "personio",
        "recruitee", "rippling", "jazzhr", "gem", "polymer", "manatal", "homerun", "clearcompany",
@@ -27,6 +27,8 @@ def systems(last: str = "or") -> str:
     names = [NAMES[a] for a in ATS if a != "careersite"]
     return ", ".join(names[:-1]) + f" {last} " + names[-1]
 BODY_CAP = 50_000
+# How `detect` found a board (Board.found), most certain first; "" for one made by hand.
+FOUND = ("named", "linked", "guessed", "")
 
 
 class BoardError(Exception):
@@ -45,13 +47,23 @@ class Board:
     (from https://tenant.wdN.myworkdayjobs.com/Site); for Teamtailor and Recruitee the
     careers site's name or, on the employer's own domain, its host; for ClearCompany the
     site id its careers page prints; for a careers site, its address.
+
+    `found` is how `detect` found it: "named" (the target was the board's own URL or
+    ats:token), "linked" (the careers page given links to it or embeds it) or "guessed" (a
+    board exists under a name the company might use, and nothing yet shows it is theirs: a
+    small organisation may have taken the name first). "" for a Board made by hand. It is
+    not part of the board's identity: two Boards with one ats and token are equal.
     """
     ats: str
     token: str
+    found: str = field(default="", compare=False, repr=False)
 
     def __post_init__(self):
         if self.ats not in ATS:
             raise ValueError(f"unknown ATS {self.ats!r}; expected one of {', '.join(ATS)}")
+        if self.found not in FOUND:
+            raise ValueError(f"unknown way of finding a board {self.found!r}; expected one of "
+                             f"{', '.join(repr(f) for f in FOUND)}")
 
     def __str__(self) -> str:
         return f"{self.ats}:{self.token}"
@@ -87,8 +99,83 @@ class Job:
     salary_currency: str = ""
     salary_period: str = ""
 
+    def __post_init__(self):
+        _take_hidden(self)
+
+    @property
+    def hidden(self) -> dict:
+        """What openroles left out of `description` because no reader of the posting sees
+        it, by kind: {"comments": 1, "scripts and styles": 1, "hidden elements": 2,
+        "tag characters": 40}, only the kinds there were, and {} when there was nothing.
+
+        A hidden element is one with the `hidden` attribute, aria-hidden="true", or an
+        inline display:none or visibility:hidden, with everything in it; tag characters
+        (U+E0000 to U+E007F) show nothing and a model reads them as the ASCII they shadow.
+        Comments and style blocks are common and usually harmless. A hidden element or tag
+        characters are words written for a program and not for a person, which is worth
+        knowing before a model reads the posting. Not part of `to_dict()`."""
+        return dict(self.__dict__.get("_hidden") or {})
+
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+def _take_hidden(job: Job) -> None:
+    """Keep what was left out of a description that says so (`Shown`), and the description
+    as plain text."""
+    found = job.description.hidden if isinstance(job.description, Shown) else None
+    if found is not None:
+        job.description = str.__str__(job.description)
+    if found:
+        job.__dict__["_hidden"] = dict(found)
+    else:
+        job.__dict__.pop("_hidden", None)
+
+
+def describe(job: Job, text: Optional[str]) -> None:
+    """Give a Job its description after it was made, from a posting's own record read
+    later, with what was left out of it (`Job.hidden`)."""
+    job.description = text or None
+    _take_hidden(job)
+
+
+class Shown(str):
+    """Text a reader of the page sees, with what was left out of it to get there (`hidden`,
+    as `Job.hidden` says it). `html_to_text` gives one only where something was left out;
+    a Job keeps the count and plain text."""
+
+    def __new__(cls, text: str = "", hidden: Optional[dict] = None):
+        self = super().__new__(cls, text)
+        self.hidden = dict(hidden or {})
+        return self
+
+
+def _add(into: dict, found) -> dict:
+    for kind, n in (found or {}).items():
+        into[kind] = into.get(kind, 0) + n
+    return into
+
+
+def joined(parts, sep: str = "\n\n") -> str:
+    """The non-empty `parts` joined with `sep`, keeping what was left out of each."""
+    parts = [p for p in parts if p]
+    found: dict = {}
+    for part in parts:
+        _add(found, getattr(part, "hidden", None))
+    text = sep.join(parts)
+    return Shown(text, found) if found else text
+
+
+def each_once(jobs) -> List[Job]:
+    """Each posting once, the first time it comes, by its id. A board read page by page while
+    it changes lists a posting on two pages when one is added or removed ahead of it."""
+    seen: set = set()
+    out = []
+    for job in jobs:
+        if job.id not in seen:
+            seen.add(job.id)
+            out.append(job)
+    return out
 
 
 # A tag is anything between "<" and ">". The tag of an inline element (group 1) leaves nothing
@@ -111,22 +198,51 @@ def _swap_tags(pattern, repl, s: str) -> str:
     return pattern.sub(repl, s[:cut]) + s[cut:]
 
 
+# Unicode tag characters (U+E0000 to U+E007F) show nothing, and a model reads a run of them as
+# the ASCII text each one shadows: a sentence written in them is on no page anyone sees. Their
+# one use in text is a subdivision flag (a black flag, two to seven tag letters or digits, and
+# U+E007F, as England's is), which is kept whole.
+_TAG_CHARS = re.compile("[\U000E0000-\U000E007F]")
+_TAG_FLAG = re.compile("\U0001F3F4[\U000E0030-\U000E0039\U000E0061-\U000E007A]{2,7}\U000E007F")
+
+
+def _untagged(text: str) -> Tuple[str, int]:
+    """(`text` without its tag characters, a subdivision flag apart, how many went)."""
+    if not _TAG_CHARS.search(text):
+        return text, 0
+    pieces, last = [], 0
+    for m in _TAG_FLAG.finditer(text):
+        pieces += (_TAG_CHARS.sub("", text[last:m.start()]), m.group(0))
+        last = m.end()
+    pieces.append(_TAG_CHARS.sub("", text[last:]))
+    out = "".join(pieces)
+    return out, len(text) - len(out)
+
+
 def html_to_text(content: str) -> str:
     """Plain text from an ATS's HTML, which some boards entity-encode twice. What no reader
     sees (comments, scripts, styles, hidden elements) is dropped first, and again after each
-    round of decoding, so what a board encoded twice is dropped too: see `_hidden`. Anything a
-    board sends there that is not text (a number, an object, a list) gives "", never an
-    exception."""
-    s = drop_hidden(content if isinstance(content, str) else "")
+    round of decoding, so what a board encoded twice is dropped too: see `_hidden`. Tag
+    characters go too. Where anything was left out, the text is a `Shown` that says what
+    (`.hidden`). Anything a board sends there that is not text (a number, an object, a list)
+    gives "", never an exception."""
+    found: dict = {}
+    s, counts = dropped(content if isinstance(content, str) else "")
+    _add(found, counts)
     for _ in range(3):
         un = html.unescape(s)
         if un == s:
             break
-        s = drop_hidden(un)
+        s, counts = dropped(un)
+        _add(found, counts)
     s = _swap_tags(_BREAK, "\n", s)
     s = _swap_tags(_TAG, lambda m: " " if m.group(1) is None else "", s)
     s = re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", s))
-    return "\n".join(line.strip() for line in s.splitlines()).strip()[:BODY_CAP]
+    text, tags = _untagged("\n".join(line.strip() for line in s.splitlines()).strip())
+    if tags:
+        found["tag characters"] = tags
+    text = text[:BODY_CAP]
+    return Shown(text, found) if found else text
 
 
 def html_or_plain(markup, plain) -> str:
@@ -134,17 +250,23 @@ def html_or_plain(markup, plain) -> str:
     board sent no HTML. A board's plain-text field is its HTML with the tags taken off and
     nothing else, so a comment or a hidden element's text is in it: `html_to_text` leaves it
     out of the HTML's. An HTML field that is there but shows no text gives "", and is not a
-    reason to read the plain one."""
+    reason to read the plain one. Tag characters are left out of either."""
     if isinstance(markup, str) and markup.strip():
         return html_to_text(markup)
-    return plain.strip() if isinstance(plain, str) else ""
+    if not isinstance(plain, str):
+        return ""
+    text, tags = _untagged(plain.strip())
+    return Shown(text, {"tag characters": tags}) if tags else text
 
 
 def failed(err: str, what: str) -> str:
     """Why a board did not come back, said honestly: a wrong name only on a 404 or an answer
-    that is not a board, slowing down on a 429 or 503, and anything else as it was."""
+    that is not a board, slowing down on a 429 or 503, a request not sent because its host
+    asked for a pause or its rate limit is spent, and anything else as it was."""
     if err in ("HTTP 429", "HTTP 503"):
         return f"the board asked to slow down ({err}); try again later"
+    if err and err.startswith("not sent: "):
+        return f"{err}; try again later"
     if not err or err == "HTTP 404" or not err.startswith(("HTTP", "URLError", "Timeout", "OSError")):
         return f"{err or 'not a board'}; probably a wrong {what}"
     return f"the board did not answer ({err})"
@@ -166,13 +288,44 @@ def workplace_of(*values) -> str:
     return ""
 
 
+# A posting's own location that names no place: a way of working ("Hybrid", "Remote",
+# "On-site"), "Anywhere", "Multiple locations", or a time zone. Where a board also files the
+# posting under offices, those say where the job is.
+_NO_PLACE = re.compile(
+    r"^\W*(?:(?:fully |100% )?remote|hybrid|on[- ]?site|in[- ]office|office[- ]based|flexible|distributed"
+    r"|anywhere|multiple locations|various(?: locations)?|(?:[a-z]+\s+)*time\s*zones?"
+    r"|(?:utc|gmt)\s*[+-]?\s*[0-9:]*)\W*$", re.I)
+
+
+def names_a_place(label) -> bool:
+    """Whether a posting's location label names somewhere, rather than a way of working
+    ("Hybrid", "Remote", "On-site"), "Anywhere", "Multiple locations" or a time zone."""
+    text = clean(label)
+    return bool(text) and not _NO_PLACE.match(text)
+
+
+def own_place_first(own: str, offices) -> List[str]:
+    """A posting's locations on a board that also files it under offices (Greenhouse, Gem).
+
+    An office is the employer's own tag, not a place the job is open at: a role a board shows
+    as "Berlin, Germany" was filed under six European offices, one shown as "San Francisco,
+    CA • New York, NY • United States" under "Canada" and "US", and one in Dublin under
+    "Ireland Locations". So a posting that names its own place is where it says, and its
+    offices count only where it names none ("Hybrid", a time zone, nothing), which is where
+    such a board records where the job is."""
+    own = clean(own)
+    if names_a_place(own):
+        return [own]
+    return list(dict.fromkeys(x for x in [own, *(clean(o) for o in offices)] if x))
+
+
 def clean(value) -> str:
     """One line of text, whitespace collapsed, from a field a board writes as text or a
-    number. Anything else (an object, a list, true) is "": written out as Python shows it,
-    it came out as text nobody wrote ("{'name': 'Leeds'}", "True")."""
+    number, without tag characters. Anything else (an object, a list, true) is "": written
+    out as Python shows it, it came out as text nobody wrote ("{'name': 'Leeds'}", "True")."""
     if isinstance(value, bool) or not isinstance(value, (str, int, float)):
         return ""
-    return " ".join(str(value or "").split())
+    return " ".join((_untagged(value)[0] if isinstance(value, str) else str(value)).split())
 
 
 # A posting is one record from a board, and one odd field in it is no reason to lose the

@@ -17,7 +17,17 @@ from typing import Callable, Iterable, List, Optional, Tuple, Union
 from urllib.parse import quote, unquote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, as_list, clean, html_to_text, iso_day, workplace_of
+from ..models import (
+    BoardError,
+    Job,
+    RobotsDisallowed,
+    as_list,
+    clean,
+    describe,
+    html_to_text,
+    iso_day,
+    workplace_of,
+)
 
 PAGE = 20            # Workday serves at most 20 postings a page
 MAX_OFFSET = 2000    # and stops paging at an offset of 2,000
@@ -206,7 +216,7 @@ class WorkdayBoard:
         if self.halt.is_set():
             return None, "not sent: the board asked to slow down"
         data, err = _http.request(url, payload)
-        if err in ("HTTP 429", "HTTP 503"):
+        if err in ("HTTP 429", "HTTP 503") or (err or "").startswith("not sent: "):
             self.halt.set()
         return data, err
 
@@ -361,7 +371,7 @@ class WorkdayBoard:
         job.posted = iso_day(info.get("startDate")) or job.posted
         job.employment_type = clean(info.get("timeType"))
         job.deadline = iso_day(info.get("endDate"))
-        job.description = html_to_text(info.get("jobDescription")) or None
+        describe(job, html_to_text(info.get("jobDescription")))
         return job
 
 
@@ -471,6 +481,18 @@ def fetch(token: str, query: Union[None, str, Iterable[str]] = None, country: st
             _summarise(board.errors + list(failed.values())),
             f"; {len(failed)} posting(s) kept without a description" if failed else "")
     return jobs
+
+
+def exists(token: str) -> bool:
+    """Whether a Workday board answers at this "tenant.wdN/Site" token, where robots.txt
+    allows reading it: one request for its first page."""
+    try:
+        board = WorkdayBoard(token)
+        board.check_robots()
+        board.first()
+    except BoardError:
+        return False
+    return True
 
 
 def hosts(token: str) -> List[str]:

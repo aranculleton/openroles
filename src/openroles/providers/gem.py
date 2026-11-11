@@ -24,6 +24,7 @@ from ..models import (
     html_or_plain,
     ident,
     iso_day,
+    own_place_first,
     workplace_of,
 )
 
@@ -60,7 +61,7 @@ def fetch(token: str) -> List[Job]:
         primary = clean(loc.get("name")) if isinstance(loc, dict) else clean(loc)
         offices = [clean(o.get("location") or o.get("name")) for o in as_list(p.get("offices"))
                    if isinstance(o, dict)]
-        places = list(dict.fromkeys(x for x in [primary, *offices] if x))
+        places = own_place_first(primary, offices)       # offices only where it names no place
         workplace = workplace_of(p.get("location_type"))
         depts = [clean(d.get("name")) for d in as_list(p.get("departments")) if isinstance(d, dict)]
         out.append(Job(

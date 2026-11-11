@@ -12,7 +12,20 @@ from __future__ import annotations
 from typing import List
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, as_list, as_str, clean, failed, html_to_text, ident, iso_day, pay
+from ..models import (
+    BoardError,
+    Job,
+    RobotsDisallowed,
+    as_list,
+    as_str,
+    clean,
+    failed,
+    html_to_text,
+    ident,
+    iso_day,
+    joined,
+    pay,
+)
 
 URL = "https://{host}/api/offers/"
 NEEDS_TOKEN = ("Recruitee asks for the employer's own Careers Site API token from 10 February "
@@ -93,8 +106,7 @@ def fetch(token: str) -> List[Job]:
         places = list(dict.fromkeys(places))
         workplace = ("remote" if o.get("remote") else "hybrid" if o.get("hybrid")
                      else "onsite" if o.get("on_site") else "")
-        body = "\n\n".join(x for x in (html_to_text(o.get("description")),
-                                       html_to_text(o.get("requirements"))) if x)
+        body = joined([html_to_text(o.get("description")), html_to_text(o.get("requirements"))])
         out.append(Job(
             id=f"rc-{number}",
             ats="recruitee",

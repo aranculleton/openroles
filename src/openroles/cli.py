@@ -41,6 +41,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         boards = detect(a.target)
         for b in boards:
             print(b)
+        guessed = [str(b) for b in boards if b.found == "guessed"]
+        if guessed:
+            print(f"openroles: {', '.join(guessed)} {'was' if len(guessed) == 1 else 'were'} guessed "
+                  f"from the name {a.target!r}, and may be another organisation's: check that the "
+                  "employer's own careers page links to it (openroles detect <that page's address>)",
+                  file=sys.stderr)
         if not boards:
             print(f"no {systems()} board found for {a.target!r}",
                   file=sys.stderr)

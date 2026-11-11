@@ -1,14 +1,17 @@
 """The one place openroles talks to the network.
 
 Polite by construction: at most PER_HOST requests in flight to any one host, a timeout
-on every call, an honest User-Agent, robots.txt read once per host a day, and a host's
-Crawl-delay kept between requests once its robots.txt has been read. A GET read before
+on every call, an honest User-Agent, robots.txt read once per host a day, a host's
+Crawl-delay kept between requests once its robots.txt has been read, nothing sent to a
+host that has answered 429 or 503 until it has had the pause it asked for, and a host's
+documented rate limit kept below across every board read from it. A GET read before
 sends the validators its last answer came with, so an unchanged board answers 304 and
 sends nothing: in memory for the life of the process, and on disk across runs where the
 caller names a cache directory (`openroles.configure(cache_dir=...)`, off by default).
 """
 from __future__ import annotations
 
+import email.utils
 import gzip
 import hashlib
 import http.client
@@ -22,11 +25,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from typing import Optional, Tuple
 
 from . import __version__
-from .robots import allowed, content_signals, crawl_delay, is_robots_body
+from .robots import allowed, content_signals, crawl_delay, has_undecodable_rule, is_robots_body
 
 USER_AGENT = f"openroles/{__version__} (+https://github.com/aranculleton/openroles)"
 TIMEOUT = 20
@@ -39,6 +42,83 @@ _SLOTS_LOCK = threading.Lock()
 _DELAYS: dict = {}
 _NEXT: dict = {}
 _PACE_LOCK = threading.Lock()
+
+# A host that answers 429 or 503 has asked to be sent less. Nothing more is sent to it,
+# from any board or any thread, until the pause its Retry-After names has passed, or
+# BACKOFF seconds when it names none; at most BACKOFF_MAX, so a long-running server comes
+# back to it. A request in that time is answered here, unsent, with HELD_OFF's words.
+BACKOFF = 600.0
+BACKOFF_MAX = 3600.0
+HELD_OFF = "not sent: {host} answered HTTP {code} and asked to slow down"
+_QUIET: dict = {}          # host -> (monotonic time it may be sent to again, the status)
+
+# Hosts whose vendor documents a rate limit: host -> (requests, seconds). openroles sends at
+# most LIMIT_SHARE of it in any such window, counted across every board and thread in the
+# process, and a request past it is not sent (BUDGET_SPENT): a board read waits on nobody,
+# and its caller hears which requests went unsent. A reader adds its host's limit here.
+LIMITS: dict = {}
+LIMIT_SHARE = 0.9
+BUDGET_SPENT = "not sent: {host} takes {n} requests in {minutes:g} minutes, and that many were sent"
+_SENT: dict = {}           # host -> times requests were sent to it, oldest first
+
+
+def _retry_after(value) -> Optional[float]:
+    """Seconds a Retry-After header asks for: a number of seconds or an HTTP date. None
+    when it is missing or says neither."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.isascii() and text.isdigit():
+        return float(text)
+    try:
+        when = email.utils.parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if when is None:
+        return None
+    return when.timestamp() - _now() if when.tzinfo else None
+
+
+def _hold_off(host: str, code: int, headers=None) -> None:
+    """Send `host` nothing more until the pause its 429 or 503 asked for has passed."""
+    asked = _retry_after(headers.get("Retry-After") if headers is not None else None)
+    pause = min(max(BACKOFF if asked is None else asked, 1.0), BACKOFF_MAX)
+    with _PACE_LOCK:
+        until = time.monotonic() + pause
+        _QUIET[host.lower()] = (max(until, _QUIET.get(host.lower(), (0.0, 0))[0]), code)
+
+
+def _quiet(key: str, now: float) -> str:
+    quiet = _QUIET.get(key)
+    return HELD_OFF.format(host=key, code=quiet[1]) if quiet and now < quiet[0] else ""
+
+
+def held_off(host: str) -> str:
+    """Why nothing may be sent to `host` now, or "": it answered 429 or 503 and its pause has
+    not passed, or the documented rate limit of its vendor is spent for now."""
+    key = host.lower()
+    with _PACE_LOCK:
+        now = time.monotonic()
+        quiet = _quiet(key, now)
+        if quiet:
+            return quiet
+        limit = LIMITS.get(key)
+        if limit:
+            n, window = limit
+            sent = _SENT.setdefault(key, deque())
+            while sent and now - sent[0] >= window:
+                sent.popleft()
+            if len(sent) >= max(1, int(n * LIMIT_SHARE)):
+                return BUDGET_SPENT.format(host=key, n=n, minutes=window / 60)
+    return ""
+
+
+def _sending(host: str) -> None:
+    """Count a request to a host with a documented rate limit."""
+    key = host.lower()
+    if key in LIMITS:
+        with _PACE_LOCK:
+            _SENT.setdefault(key, deque()).append(time.monotonic())
 
 
 def _slot(host: str) -> threading.BoundedSemaphore:
@@ -503,15 +583,23 @@ def _one(url: str, data, headers: dict, limit: int):
             headers["If-Modified-Since"] = cached[1]
     err = None
     # One retry, after a pause, for a dropped connection or a gateway error. Never for
-    # 429 or 503: those mean slow down, and the caller decides what that means.
+    # 429 or 503: those mean slow down, and the host is sent nothing more for a while
+    # (`_hold_off`); the caller decides what that means for the rest of its read.
     for attempt in range(2):
         if attempt:
             time.sleep(RETRY_PAUSE)
         try:
             req = urllib.request.Request(url, data=data, headers=headers,
                                          method="POST" if data is not None else "GET")
+            why = held_off(host)
+            if why:
+                return "", why, None, None, None
             with _slot(host):
                 _wait_turn(host)
+                why = held_off(host)         # it may have said 429 while this one waited
+                if why:
+                    return "", why, None, None, None
+                _sending(host)
                 with _urlopen(req, timeout=TIMEOUT) as fh:
                     body, whole, size = _read(fh, limit)
                     keep = _validators(fh.headers) if data is None and whole else None
@@ -526,6 +614,8 @@ def _one(url: str, data, headers: dict, limit: int):
             if e.code in REDIRECTS and e.headers and e.headers.get("Location"):
                 return "", None, (urllib.parse.urljoin(url, e.headers["Location"]), e.code), None, None
             err = f"HTTP {e.code}"
+            if e.code in (429, 503):
+                _hold_off(host, e.code, e.headers)
             if e.code not in (502, 504):
                 break
         # HTTPException covers a body cut off mid-read, which is not an OSError.
@@ -565,6 +655,9 @@ def robots_txt(host: str) -> Tuple[int, str]:
     with _ROBOTS_LOCK:
         if key in _ROBOTS and time.monotonic() - _ROBOTS[key][0] < ROBOTS_TTL:
             return _ROBOTS[key][1]
+    with _PACE_LOCK:
+        if _quiet(key, time.monotonic()):
+            return 0, ""        # not asked, and not kept: the host is read again after its pause
     req = urllib.request.Request(f"https://{key}/robots.txt",
                                  headers={"User-Agent": USER_AGENT,
                                           "Accept": "text/plain,*/*"})
@@ -574,10 +667,13 @@ def robots_txt(host: str) -> Tuple[int, str]:
                 got = (fh.status, fh.read(512_000).decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:
         got = (e.code, "")
+        if e.code in (429, 503):
+            _hold_off(key, e.code, e.headers)
     except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
         got = (0, "")
-    with _ROBOTS_LOCK:
-        _ROBOTS[key] = (time.monotonic(), got)
+    if got[0] not in (429, 503):         # a pause asked for is kept by _hold_off, not for a day
+        with _ROBOTS_LOCK:
+            _ROBOTS[key] = (time.monotonic(), got)
     if got[0] == 200 and is_robots_body(got[1]):
         _DELAYS[key] = max(crawl_delay(got[1], a) for a in AGENTS)
     return got
@@ -597,6 +693,9 @@ def robots_allows(host: str, paths) -> Tuple[bool, str]:
         if not is_robots_body(body):
             return False, ("robots.txt answered 200 with something that is not a robots "
                            "file, so permission is unconfirmed")
+        if has_undecodable_rule(body):
+            return False, (f"robots.txt on {host} has a rule that is not UTF-8 text, which no "
+                           "path can be matched against, so permission is unconfirmed")
         no = _no_ai(host, body)
         if no:
             return False, no

@@ -63,8 +63,10 @@ openroles linear --cache ~/.cache/openroles        # an unchanged board sends no
 ```python
 import openroles
 
-openroles.detect("Figma")
+boards = openroles.detect("Figma")
 # [Board(ats='greenhouse', token='figma'), Board(ats='ashby', token='figma')]
+[b.found for b in boards]
+# ['guessed', 'guessed']: boards under a name Figma might use; 'linked' from a careers page
 
 jobs = openroles.fetch("greenhouse:figma", query="data", location="New York")
 for job in jobs:
@@ -78,6 +80,11 @@ openroles.hosts("personio:acme")
 openroles.job_id("https://www.acme.example/careers/?gh_jid=4012345")
 # 'gh-4012345': the same id fetch() gives that posting, from its address alone
 ```
+
+`job.hidden` says what was left out of a posting's description because no reader sees it,
+such as `{"hidden elements": 2, "tag characters": 40}`, and is `{}` for most. Text hidden
+from people is often written for a model, so it is worth a look before one reads the
+posting.
 
 `job_id` is for matching one posting found in two places, read from the employer's board
 and linked from a job site. It reads Greenhouse (any page with `gh_jid` too), Lever,
@@ -133,8 +140,9 @@ openroles asks itself, for anything else your application fetches.
 
 `openroles mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server over
 stdio, so Claude, Cursor and other agents can look up any employer's open roles
-themselves. Two tools: `find_job_board` and `list_open_roles` (descriptions left out
-unless asked for, to keep answers short).
+themselves. Two tools: `find_job_board` (each board with how it was found, so a guess is
+not taken for the employer's own) and `list_open_roles` (descriptions left out unless
+asked for, to keep answers short).
 
 Claude Code:
 
@@ -172,13 +180,13 @@ Every role, from every system, has the same fields:
 | `compensation` | the posted pay band, where the employer publishes one, as the board words it |
 | `salary_min`, `salary_max`, `salary_currency`, `salary_period` | the same band as numbers, its ISO currency code and `hour`, `day`, `week`, `month`, `year` or `""` (a period such as every two weeks), only where the board publishes them as numbers (Lever, Ashby, Recruitee, Rippling, ClearCompany, careers sites); never read out of a description |
 | `deadline` | where the board provides one |
-| `description` | plain text: HTML removed, and with it what no page shows (comments, scripts, hidden elements) |
+| `description` | plain text: HTML removed, and with it what no page shows (comments, scripts, hidden elements, Unicode tag characters); `job.hidden` says what was left out, and is not part of `to_dict()` |
 
 ## Supported systems
 
 | System | Requests | Notes |
 |---|---|---|
-| Greenhouse | 1 per board | descriptions; every office a posting lists counts as one of its locations |
+| Greenhouse | 1 per board | descriptions; a posting's offices count as its locations only where its own location names no place ("Hybrid", a time zone): an office is the employer's tag, not where the job is |
 | Lever | 1 per board | descriptions with their requirement lists; EU boards found automatically |
 | Ashby | 1 per board | descriptions and posted pay. Ashby publishes no first-posted date, so `posted` is when the posting was last published |
 | Workday | 1 per 20 roles, plus 1 per description | `--query` searches the board, reading on while titles keep matching; `--country` narrows it by whatever facet the board files countries under; `--details` fetches descriptions, only for roles whose title passes `--query` |
@@ -186,7 +194,7 @@ Every role, from every system, has the same fields:
 | Teamtailor | 1 per 100 roles | descriptions; hybrid and remote; a careers site on the employer's own domain works too |
 | Personio | 1 per board | descriptions in English where the employer wrote them; `.de` and `.com` accounts |
 | Recruitee | 1 per board | descriptions, pay and closing dates. From 10 February 2027 Recruitee asks for each employer's own token, after which a board reads as needing it |
-| Rippling | 1 per board, plus 1 per description | descriptions and dates come from each posting's own record, fetched only with `--details` or a `--query`, at most 80 a board (Rippling allows 100 requests in 10 minutes) |
+| Rippling | 1 per board, plus 1 per description | descriptions and dates come from each posting's own record, fetched only with `--details` or a `--query`, at most 80 a board and 90 in any ten minutes across boards (Rippling allows 100 requests in 10 minutes) |
 | JazzHR | 1 per board | descriptions; no date or pay. The feed is regenerated once a day |
 | Gem | 1 per board | descriptions; hybrid and remote |
 | Polymer | 1 per 20 roles, plus 1 per description | pay; descriptions as for Rippling, at most 60 a board |
@@ -202,11 +210,15 @@ warning says to search with `--query`.
 
 `detect` finds a board from a company name (every system but Workday and ClearCompany,
 by trying the names an employer is likely to use), from any board URL, and from a careers
-page that links to or embeds one, however the page writes it. A Workday board cannot be
+page that links to or embeds one, however the page writes it. Each board says how it was
+found (`Board.found`): `named` (its URL or `ats:token` was given), `linked` (the careers
+page links to it) or `guessed` (a board exists under a name the employer might use). A
+guess can be a stranger's board that took the name first, so confirm it from the
+employer's careers page; `openroles detect` says so on stderr. A Workday board cannot be
 guessed from a name: give its URL (either `tenant.wdN.myworkdayjobs.com` or
 `wdN.myworkdaysite.com/recruiting/tenant`). A careers site is never guessed: name it as
-`careersite:<address>`. When a careers page uses a system openroles cannot read, a
-warning names it.
+`careersite:<address>`. When a careers page uses a system openroles cannot read (any in
+the table below), a warning names it and says why.
 
 ### Not supported, and why
 
@@ -223,7 +235,7 @@ publishes an open board its own terms and robots.txt allow.
 | Oracle Recruiting | its job API is marked for internal use, and the job pages build their `JobPosting` in the browser |
 | Freshteam | being shut down by its vendor |
 | iCIMS, Eightfold | no open job API, but their careers sites usually publish `JobPosting` pages: read them as `careersite:` |
-| Taleo, ADP, Paylocity, JOIN, TalentLyft, ApplicantPro | not yet checked well enough to build a reader on |
+| Taleo, ADP, Paylocity, JOIN, TalentLyft, ApplicantPro, Jobvite | not yet checked well enough to build a reader on |
 
 ## Polite by design
 
@@ -243,8 +255,11 @@ publishes an open board its own terms and robots.txt allow.
   conditional requests (`ETag` and `Last-Modified`) for anything read twice in a run, and
   across runs with a cache folder, and an honest `User-Agent` naming this project.
 - **XML that declares a DTD or entities is never parsed**, so a hostile feed cannot expand.
-- **A board that answers 429 or 503 is left alone** for the rest of the run, and a
-  documented rate limit (Rippling's 100 requests in 10 minutes) is kept below.
+- **A host that answers 429 or 503 is sent nothing more** until the pause its
+  `Retry-After` names has passed, or for ten minutes when it names none, from any board read
+  from it; a request in that time is not sent, and says so. A documented rate limit
+  (Rippling's 100 requests in 10 minutes) is kept below across every board read from the
+  host in a process, and a request past it is not sent either.
 
 ## Is this allowed?
 

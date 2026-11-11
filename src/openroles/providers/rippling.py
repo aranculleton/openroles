@@ -5,8 +5,9 @@ Rippling publishes the API for rendering a board on a company's own careers site
 https://api.rippling.com/platform/api/ats/v2/board/<slug>/jobs, with no authentication
 and "Rate Limit: 100 requests every 10 minutes". The listing carries no description or
 date; each posting's own record (the same host, /<slug>/jobs/<id>) does, so it is
-fetched only when asked for, and never more than DETAIL_CAP a board, which keeps a read
-inside that limit. Only an explicit Disallow in the host's robots.txt stops a read.
+fetched only when asked for, and never more than DETAIL_CAP a board. The limit is kept
+across boards too: every request to the host counts against it (`_http.LIMITS`), and one
+past it is not sent. Only an explicit Disallow in the host's robots.txt stops a read.
 """
 from __future__ import annotations
 
@@ -22,10 +23,13 @@ from ..models import (
     as_list,
     as_str,
     clean,
+    describe,
+    each_once,
     failed,
     html_to_text,
     ident,
     iso_day,
+    joined,
     pay,
     workplace_of,
 )
@@ -35,6 +39,7 @@ BASE = "https://api.rippling.com/platform/api/ats/v2/board/{slug}"
 PAGE_SIZE = 1000            # the documented maximum
 MAX_PAGES = 5
 DETAIL_CAP = 80             # under the documented 100 requests every 10 minutes
+_http.LIMITS.setdefault(HOST, (100, 600))
 
 Details = Union[bool, Callable[[Job], bool]]
 
@@ -129,6 +134,7 @@ def fetch(token: str, details: Details = False, report: Optional[dict] = None) -
             department=clean(dept.get("name")) if isinstance(dept, dict) else clean(dept),
             workplace=workplace,
         ))
+    out = each_once(out)        # paged: a posting added ahead of a page repeats one
     want = [j for j in out if details is True or (callable(details) and details(j))][:DETAIL_CAP]
     failed: dict = {}
     for job in want:
@@ -137,15 +143,14 @@ def fetch(token: str, details: Details = False, report: Optional[dict] = None) -
             failed[job.id] = err or "a posting record that was not a posting"
             continue
         desc = as_dict(detail.get("description"))
-        body = "\n\n".join(x for x in (html_to_text(desc.get("role")),
-                                       html_to_text(desc.get("company"))) if x)
+        body = joined([html_to_text(desc.get("role")), html_to_text(desc.get("company"))])
         kind = detail.get("employmentType")
         job.posted = iso_day(detail.get("createdOn"))
         job.employment_type = clean(kind.get("label")) if isinstance(kind, dict) else clean(kind)
         job.compensation = _pay(detail)
         for name, value in _salary(detail).items():
             setattr(job, name, value)
-        job.description = body or None
+        describe(job, body)
     if report is not None:
         report.update(listing_errors=[], detail_errors=failed, details_asked=len(want))
     return out

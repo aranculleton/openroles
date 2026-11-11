@@ -1,5 +1,130 @@
 # Changelog
 
+## 0.5.0 (2026-11-11)
+
+A host that asks to slow down is left alone, robots.txt is matched as RFC 9309 says, an
+office tag is no longer taken for where a job is, and a description says what was left out
+of it.
+
+### New
+
+- **`detect` says how it found each board: named, linked or guessed.** `Board.found` is
+  "named" when the target was the board's own URL or `ats:token`, "linked" when the
+  careers page given links to it or embeds it, and "guessed" when a board exists under a
+  name the company might use, which can be a small organisation's that took the name
+  first. It is not part of a board's identity (two boards with one system and token are
+  equal, and `repr` is as before), and a `Board` made by hand has "". `openroles detect`
+  prints the same lines and adds a warning on stderr for a guess; the MCP tool
+  `find_job_board` returns `{"board": "ats:token", "found": ...}` for each, where it
+  returned the bare strings, and its description tells an agent to confirm a guess from
+  the employer's careers page.
+- **`Job.hidden` says what was left out of a description because no reader sees it.** Since
+  0.4.0 a description leaves out comments, scripts and styles, and hidden elements, and
+  nothing said a posting had any. `job.hidden` is `{"comments": 1, "hidden elements": 2,
+  "tag characters": 40}`, only the kinds there were, or `{}`: text hidden from people is
+  often written for a model, which is worth knowing before one reads the posting. It counts
+  every part of a description built from several (Lever's lists, Personio's sections,
+  Recruitee's requirements, Rippling's company text) and a description read later from a
+  posting's own page (Workday, Rippling, Polymer). It is a property, not a field, so
+  `to_dict()`, equality and the JSON are as before; it survives a copy or a pickle.
+  `html_to_text` gives a `models.Shown`, a `str` that carries the same count, where it left
+  something out; a `Job` keeps the count and plain text. The MCP tool `list_open_roles`
+  adds it to a role as `hidden` when descriptions are asked for.
+
+### Changed
+
+- **Unicode tag characters are left out of every field.** U+E0000 to U+E007F show
+  nothing on a page, and a model reads a run of them as the ASCII text each shadows, so a
+  sentence written in them reached `description`, `title` or any other field unseen by
+  people and read by a model. They are left out now, as hidden elements are, except in a
+  subdivision flag (England's, Scotland's, Wales'), which is kept whole; a description
+  counts them in `job.hidden`.
+- **A Greenhouse or Gem posting is where its own location says, not where its office tags
+  are.** Both systems file a posting under the employer's offices as well as its own
+  location, and every office counted as a location, so a filter by place found postings
+  that are not there: on live boards, a role shown as "Berlin, Germany" is filed under six
+  European offices, one shown as "San Francisco, CA • New York, NY • United States" under
+  "Canada" and "US", one in Dublin under "Ireland Locations", and `location="Paris"` found
+  the Berlin one. A posting whose own location names a place now has that alone as its
+  `locations`; its offices count only where it names none ("Hybrid", "Remote", "On-site",
+  "Anywhere", "Multiple locations", a time zone, nothing), which is where these boards
+  record where the job is, as 0.2.0 found. `models.names_a_place` and
+  `models.own_place_first` are the rule. Gem's `location` is the same list joined.
+
+### Fixed
+
+- **A robots.txt that starts with a byte-order mark is obeyed.** Saved with one, its first
+  field read as the mark and "user-agent", so a leading `User-agent: *` was not seen, every
+  rule of that group was dropped for want of an agent, and `Disallow: /` read as allowing
+  everything. One leading mark is skipped now, wherever a robots.txt is read (its rules, its
+  Crawl-delay, its Content-Signal, and whether it is a robots file at all).
+- **A rule matches its path however either is percent-encoded, as RFC 9309 says.** Only the
+  rule was decoded, so `Disallow: /search?q=café` and `Disallow: /search?q=caf%C3%A9` never
+  matched the address `/search?q=caf%C3%A9`, and read as allowing it; a board token with a
+  character outside ASCII in it, which openroles escapes in the path it asks about, was
+  never matched by the rule written for it. Both are now put in one form before they are
+  compared (RFC 9309, section 2.2.2): anything outside ASCII, and a space, percent-encoded
+  as UTF-8, an escaped unreserved character ("%62", "%7E") decoded, and every other escape
+  kept, its hex in capitals. So "%2F" is still not "/", and an escaped "*" or "$" in a rule
+  is that character, not a wildcard or the end.
+- **A "$" ends a pattern only as its last character.** Anywhere else it is the character
+  itself, as RFC 9309 and Google's parser read it: `Disallow: /a$b` did not match `/a$b`.
+- **A robots.txt rule that is not UTF-8 leaves permission unconfirmed.** A robots.txt saved
+  in another encoding with such a byte in a rule reads it as U+FFFD, and a pattern holding
+  one matches no path, so the rule was as good as absent. Where robots.txt must allow a
+  read (Ashby, Workday, Homerun, ClearCompany, careers sites), a User-agent, Allow or
+  Disallow line holding one now leaves permission unconfirmed, as a robots.txt that cannot
+  be read does (`robots.has_undecodable_rule`). A robots.txt is also parsed once for all the
+  paths and agents a read asks about, not once for each.
+- **A board is found from a company's name in a few seconds, not twenty.** `detect` tried
+  each likely name on thirteen systems one after another, each waiting on its own answer
+  and its robots.txt: `openroles detect Figma` took 17 seconds. Each name is tried on every
+  system at once now, since each is its own host (and each host still gets two requests at
+  most), in 3.5 seconds; the boards come back in the same order as before, and one system
+  that fails no longer stops the rest from being tried.
+- **The MCP tool `list_open_roles` reads the numbers an agent sends as text, and refuses
+  the ones it cannot use.** `since_days` sent as "7" (as some agents send every argument)
+  failed with a `TypeError` from deep inside, `limit` was not held to the 200 its schema
+  says, and `remote_only` or `include_descriptions` sent as "false" read as yes. "7" and
+  7.0 are 7 now, "true" and "false" are read as they say, `limit` is at most 200, and a
+  value that is not a whole number of at least one is a tool error that names it.
+- **A posting listed on two pages of a board comes back once.** Teamtailor, Manatal,
+  Polymer and Rippling are read page by page, and a posting added or removed ahead of a
+  page while it is read moves another onto the next one, which then lists it again: it came
+  back twice, with one id, and Rippling and Polymer asked for its record twice. Each now
+  keeps the first, before any record is asked for, and `fetch` never returns one id twice
+  (`models.each_once`).
+- **The Workday reader has `exists(token)`, as every other reader does.** Code that walks
+  `openroles.providers.READERS` and asks each reader whether a board exists raised
+  `AttributeError` on Workday. `workday.exists("tenant.wdN/Site")` reads the board's first
+  page where robots.txt allows it, and a test holds every reader to `fetch`, `exists` and
+  `hosts`.
+- **A careers page on any system the README lists as not supported says which, and why.**
+  `detect` warned for six of them (SuccessFactors, iCIMS, Eightfold, Taleo, Oracle and
+  SmartRecruiters); a page on Dayforce, UKG, Paycom, Pinpoint, BambooHR, Breezy,
+  Cornerstone, BrassRing, Hireology, Comeet, Phenom, Freshteam, ADP, Paylocity, JOIN,
+  TalentLyft or ApplicantPro found nothing and said nothing. Each is recognised now, with
+  the README's reason, and a test holds the list to the README's table. Jobvite is added to
+  the systems not yet checked.
+- **A host that answers 429 or 503 is sent nothing more until its pause has passed.** Only
+  Workday stopped when told to slow down, and only for the board it was reading: Rippling
+  and Polymer went on asking for every posting's record, a careers site for every job
+  page, and every other board on the same host was read as if nothing had been said. Now
+  the host itself is held: nothing is sent to it, from any board or thread, until the pause
+  its `Retry-After` names has passed (seconds or a date), or for ten minutes
+  (`_http.BACKOFF`) when it names none, and never for more than an hour, so a long-running
+  MCP server comes back to it. A request in that time fails at once with "not sent: <host>
+  answered HTTP 429 and asked to slow down", and a board that fails that way says to try
+  again later rather than that its name is probably wrong. A robots.txt that answers 429 or
+  503 holds its host the same way, and is asked again after the pause instead of being
+  read as unreachable for a day.
+- **Rippling's documented rate limit holds across boards.** "100 requests every 10
+  minutes" was kept per board (80 postings' records at most), so a run that read two
+  Rippling boards could send 160. Every request to `api.rippling.com` now counts against
+  one budget for the process, 90 in any ten minutes, and one past it is not sent ("not
+  sent: api.rippling.com takes 100 requests in 10 minutes, and that many were sent"). A
+  reader for another host with a documented limit adds it to `_http.LIMITS`.
+
 ## 0.4.0 (2026-10-26)
 
 What no reader sees no longer reaches a description, inline tags join the words around

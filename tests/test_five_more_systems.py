@@ -16,7 +16,7 @@ def test_gem_reads_its_job_posts(web):
          "departments": [{"id": 1, "name": "Analytics"}], "employment_type": "full_time",
          "first_published_at": "2026-09-01T00:00:00Z", "content_plain": "Model demand."}]
     [job] = gem.fetch("acme")
-    assert job.id == "gm-p1" and job.locations == ["Leeds", "Leeds, United Kingdom"]
+    assert job.id == "gm-p1" and job.locations == ["Leeds"]      # its office is a tag
     assert job.workplace == "hybrid" and job.posted == "2026-09-01" and job.department == "Analytics"
     assert job.employment_type == "full time" and job.description == "Model demand."
 

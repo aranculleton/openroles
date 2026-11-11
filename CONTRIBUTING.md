@@ -24,7 +24,8 @@ the `web` fixture in `tests/conftest.py`.
   one ATS has goes into an existing field or not at all; open an issue first if you think
   the shape needs to change.
 - **Polite, always.** robots.txt is read and obeyed, never worked around. Two requests per
-  host at a time. A board that answers 429 or 503 is left alone. These are not up for
+  host at a time. A host that answers 429 or 503 is sent nothing until its pause has
+  passed, and a documented rate limit goes in `_http.LIMITS`. These are not up for
   trade-offs.
 - **A test for every fix.** The smallest input that showed the bug, as an invented
   fixture. Never paste a real company's board or a real person's details into a fixture.

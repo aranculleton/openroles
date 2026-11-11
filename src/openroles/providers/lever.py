@@ -24,6 +24,7 @@ from ..models import (
     html_to_text,
     ident,
     iso_day,
+    joined,
     pay,
     workplace_of,
 )
@@ -82,10 +83,9 @@ def _description(j: dict) -> Optional[str]:
         body = html_to_text(block.get("content"))
         head = clean(block.get("text"))
         if head or body:
-            parts.append(f"{head}\n{body}".strip())
+            parts.append(joined([head, body], "\n"))
     parts.append(html_or_plain(j.get("additional"), j.get("additionalPlain")))
-    text = "\n\n".join(p for p in parts if p)
-    return text or None
+    return joined(parts) or None
 
 
 def _pay(j: dict) -> str:

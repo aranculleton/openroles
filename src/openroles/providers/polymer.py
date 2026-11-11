@@ -12,7 +12,20 @@ from typing import Callable, List, Optional, Union
 from urllib.parse import quote
 
 from .. import _http
-from ..models import BoardError, Job, RobotsDisallowed, as_str, clean, failed, html_to_text, ident, iso_day, workplace_of
+from ..models import (
+    BoardError,
+    Job,
+    RobotsDisallowed,
+    as_str,
+    clean,
+    describe,
+    each_once,
+    failed,
+    html_to_text,
+    ident,
+    iso_day,
+    workplace_of,
+)
 
 HOST = "api.polymer.co"
 BASE = "https://api.polymer.co/v1/hire/organizations/{slug}/jobs"
@@ -73,6 +86,7 @@ def fetch(token: str, details: Details = False, report: Optional[dict] = None) -
             compensation=clean(i.get("salary_pretty")),
             workplace=workplace,
         ))
+    out = each_once(out)        # paged: a posting added ahead of a page repeats one
     want = [j for j in out if details is True or (callable(details) and details(j))][:DETAIL_CAP]
     errors: dict = {}
     for job in want:
@@ -81,7 +95,7 @@ def fetch(token: str, details: Details = False, report: Optional[dict] = None) -
             errors[job.id] = err or "a job record that was not a job"
             continue
         rec = detail.get("item") if isinstance(detail.get("item"), dict) else detail
-        job.description = html_to_text(rec.get("description")) or None
+        describe(job, html_to_text(rec.get("description")))
         job.department = clean(rec.get("department")) or job.department
     if report is not None:
         report.update(listing_errors=[], detail_errors=errors, details_asked=len(want))

@@ -11,7 +11,7 @@ no account, no scraping service, and nothing but the Python standard library.
 """
 from __future__ import annotations
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 import datetime as _dt
 import os as _os
@@ -90,7 +90,12 @@ def job_id(url: str) -> str:
 
 
 def detect(target: str) -> List[Board]:
-    """The job boards behind a board URL, "ats:token", a careers page or a company name."""
+    """The job boards behind a board URL, "ats:token", a careers page or a company name.
+
+    Each Board's `found` says how: "named" (the target was its URL or ats:token), "linked"
+    (the careers page given links to it or embeds it) or "guessed" (a board exists under a
+    name the company might use; confirm it on the employer's own careers page before taking
+    it for theirs)."""
     from .discover import detect as _detect
     return _detect(target)
 
@@ -190,6 +195,8 @@ def fetch(target: Union[str, Board], query: Optional[str] = None,
         logging.getLogger("openroles").warning(
             "%d of %d boards could not be read: %s", len(failed), len(boards),
             "; ".join(str(e) for e in failed))
+    from .models import each_once
+    jobs = each_once(jobs)
     jobs.sort(key=lambda j: j.posted or "", reverse=True)
     return jobs[:limit] if limit else jobs
 

@@ -180,7 +180,7 @@ Every role, from every system, has the same fields:
 | `compensation` | the posted pay band, where the employer publishes one, as the board words it |
 | `salary_min`, `salary_max`, `salary_currency`, `salary_period` | the same band as numbers, its ISO currency code and `hour`, `day`, `week`, `month`, `year` or `""` (a period such as every two weeks), only where the board publishes them as numbers (Lever, Ashby, Recruitee, Rippling, ClearCompany, careers sites); never read out of a description |
 | `deadline` | where the board provides one |
-| `description` | plain text: HTML removed, and with it what no page shows (comments, scripts, hidden elements, Unicode tag characters); `job.hidden` says what was left out, and is not part of `to_dict()` |
+| `description` | plain text: HTML removed, and with it what no page shows (comments, scripts, hidden elements, Unicode tag characters); an element is hidden by the `hidden` attribute, `aria-hidden="true"`, or an inline style that hides it (`display: none`, `visibility: hidden`, `opacity: 0`, `font-size: 0`, `color: transparent`, a clip that leaves nothing, a place far off the page, a height of 0 with its overflow hidden); `job.hidden` says what was left out, and is not part of `to_dict()` |
 
 ## Supported systems
 

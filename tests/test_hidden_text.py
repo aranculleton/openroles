@@ -46,6 +46,24 @@ HIDDEN = {
     "the hidden attribute after a quoted value": f'<div class="a"hidden>{PROMPT}</div>',
     "the hidden attribute after a > inside a value": f'<div title=">" hidden>{PROMPT}</div>',
     "a hidden element inside a hidden one": f"<div hidden><div>x</div><span hidden>y</span>{PROMPT}</div>",
+    # An inline style that hides by size, colour, place, opacity or a box of nothing: not
+    # display:none, and as unseen (0.5.1). Each is read by its own property name.
+    "opacity:0": f'<span style="opacity:0">{PROMPT}</span>',
+    "opacity:0.0 after another property": f"<span style='color:red; opacity: 0.0'>{PROMPT}</span>",
+    "font-size:0": f'<span style="font-size:0">{PROMPT}</span>',
+    "font-size:0px !important": f'<span style="font-size: 0px !important">{PROMPT}</span>',
+    "color:transparent": f'<span style="color:transparent">{PROMPT}</span>',
+    "color:transparent in capitals": f'<span style="COLOR : Transparent">{PROMPT}</span>',
+    "clip:rect(0 0 0 0)": f'<span style="position:absolute;clip:rect(0 0 0 0)">{PROMPT}</span>',
+    "clip:rect(1px, 1px, 1px, 1px)": f'<span style="clip: rect(1px, 1px, 1px, 1px)">{PROMPT}</span>',
+    "clip-path:inset(100%)": f'<span style="clip-path:inset(100%)">{PROMPT}</span>',
+    "text-indent off the page": f'<p style="text-indent:-9999px">{PROMPT}</p>',
+    "margin-left off the page": f'<div style="margin-left: -10000px">{PROMPT}</div>',
+    "left off the page, positioned": f'<div style="position:absolute; left:-9999px">{PROMPT}</div>',
+    "top off the page, positioned": f'<div style="top:-5000px;position:fixed">{PROMPT}</div>',
+    "a height of 0 with its overflow hidden": f'<div style="height:0;overflow:hidden">{PROMPT}</div>',
+    "a max-width of 0 with its overflow clipped": f'<div style="max-width:0px; overflow-x: clip">{PROMPT}</div>',
+    "font-size:0 with an escape in it": f'<span style="font-size:\\30">{PROMPT}</span>',
     "a hidden element with a comment holding its end tag": f"<div hidden><!-- </div> -->{PROMPT}</div>",
     "a hidden element with a script holding its end tag": f"<div hidden><script>'</div>'</script>{PROMPT}</div>",
     "a hidden element with elements inside it": f"<div hidden><ul><li><b>{PROMPT}</b></li></ul></div>",
@@ -190,6 +208,23 @@ def test_a_tag_that_is_cut_off_by_the_end_of_the_text_is_left_as_it_was():
     '<div style="font-family: none">kept</div>',
     '<div style="content: \'display:none\'">kept</div>',
     '<div style="color:red" style="display:none">kept</div>',     # a browser keeps the first of a repeated attribute
+    # Styles that only look like they hide: part of a longer property's name, or a value
+    # that still shows the text.
+    '<div style="background-color: transparent">kept</div>',
+    '<div style="border-color:transparent">kept</div>',
+    '<div style="opacity:0.5">kept</div>',
+    '<div style="opacity:0.05">kept</div>',
+    '<div style="font-size:0.8em">kept</div>',
+    '<div style="line-height:0">kept</div>',
+    '<div style="min-height:0; overflow:hidden">kept</div>',
+    '<div style="border-width:0; overflow:hidden">kept</div>',
+    '<div style="height:0">kept</div>',
+    '<div style="height:20px; overflow:hidden">kept</div>',
+    '<div style="text-indent:-10px">kept</div>',
+    '<div style="margin-top:-20px">kept</div>',
+    '<div style="left:-9999px">kept</div>',                     # not positioned: left moves nothing
+    '<div style="clip: rect(0 100px 50px 0)">kept</div>',         # a clip that still shows a box
+    '<div style="clip-path: inset(10%)">kept</div>',
     '<img alt="hidden" src="x.png">kept',
     '<hiddenish>kept</hiddenish>',
     '<styled>kept</styled>',
@@ -255,6 +290,7 @@ LINEAR = {
     "styles with many declarations": '<div style="' + "a:b;" * 60_000 + 'display:none">x</div>',
     "styles with many comments": '<div style="' + "/*" * 60_000 + '">x</div>',
     "styles with many escapes": '<div style="' + "\\" * 60_000 + '">x</div>',
+    "styles with many sizes and clips": '<div style="' + "font-size:1px;clip:rect(1 2 3 4);" * 30_000 + 'opacity:0">x</div>',
     "a hidden element encoded twice": "&amp;lt;div hidden&amp;gt;x&amp;lt;/div&amp;gt;" * 10_000,
 }
 
@@ -300,7 +336,9 @@ def test_text_that_only_looks_like_it_hides_reads_as_it_did():
     pieces = [
         "<p>", "</p>", "<br>", "<br/>", "<li>", "</li>", "<ul>", "</ul>", "<div>", "</div>", "<b>", "</b>",
         '<a href="x">', "</a>", '<p style="color:red">', '<span class="hidden">', "</span>",
-        '<div title="display:none">', "<div style='font-size:0'>", '<i data-x="aria-hidden=true">',
+        '<div title="display:none">', "<div style='font-size:0.9em'>", '<i data-x="aria-hidden=true">',
+        "<span style='background-color: transparent'>", '<p style="opacity:0.5">',
+        "<div style='min-height:0;overflow:hidden'>", '<div style="left:-9999px">',
         "<h2 id=hidden>", "</h2>", '<span style="visibility:visible">', '<span style="display:block">',
         '<img src="a.png" alt="hidden">', "<p aria-hidden=false>", "<p aria-hidden>", "<hiddenish>",
         "</hiddenish>", "<styled>", "</styled>", "<td style=color:red>", "text", " word ", "&lt;", "&gt;",
@@ -322,11 +360,16 @@ HIDERS = [
     ' style="color:red; display: none !important;"', ' style="display:/**/none"', ' style="d\\69splay:none"',
     ' style="visibility:hidden"', ' style="Visibility :\n Hidden"', " STYLE=display:none",
     ' class="a" hidden', ' title="a>b" hidden', " title='x>' style='display:none'", ' data-x="1"hidden',
+    ' style="opacity:0"', " style='font-size:0px'", ' style="color: transparent"',
+    ' style="height:0;overflow:hidden"', ' style="position:absolute;left:-9999px"',
+    ' style="clip:rect(0,0,0,0)"', ' style="text-indent:-9999px"',
 ]
 LOOKALIKES = [
     "", ' class="hidden"', ' title="display:none"', ' aria-hidden="false"', ' style="color:red"',
     ' data-hidden="true"', ' style="display:block"', ' style="visibility:visible"', ' title="a>b"',
     " id=hidden", " aria-label='hidden'", ' style="display:flex;visibility:visible"',
+    ' style="background-color:transparent"', ' style="opacity:0.5"', ' style="font-size:0.9em"',
+    ' style="min-height:0;overflow:hidden"', ' style="left:-9999px"', ' style="line-height:0"',
 ]
 BLOCKS, PHRASING, WITH_PHRASING = ("div", "section"), ("span", "b", "em"), ("p", "h2")
 

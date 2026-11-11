@@ -109,7 +109,9 @@ class Job:
         "tag characters": 40}, only the kinds there were, and {} when there was nothing.
 
         A hidden element is one with the `hidden` attribute, aria-hidden="true", or an
-        inline display:none or visibility:hidden, with everything in it; tag characters
+        inline style that hides it (display:none, visibility:hidden, opacity:0, font-size:0,
+        color:transparent, a clip that leaves nothing, a place far off the page, a height of
+        0 with its overflow hidden), with everything in it; tag characters
         (U+E0000 to U+E007F) show nothing and a model reads them as the ASCII they shadow.
         Comments and style blocks are common and usually harmless. A hidden element or tag
         characters are words written for a program and not for a person, which is worth

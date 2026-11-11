@@ -11,7 +11,7 @@ no account, no scraping service, and nothing but the Python standard library.
 """
 from __future__ import annotations
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 import datetime as _dt
 import os as _os
